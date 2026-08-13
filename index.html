@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>payment.jivadaya.org - Gateway Connector Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #ea580c;
+      --primary-hover: #c2410c;
+      --bg-dark: #0f172a;
+      --card-bg: #1e293b;
+      --accent-blue: #38bdf8;
+      --text-light: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-light);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .badge {
+      background: rgba(234, 88, 12, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(234, 88, 12, 0.4);
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-block;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.75rem;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+    }
+
+    input, select {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      color: var(--text-light);
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.2);
+    }
+
+    .gateway-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .gateway-card {
+      background: #0f172a;
+      border: 2px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .gateway-card.active {
+      border-color: var(--primary);
+      background: rgba(234, 88, 12, 0.08);
+    }
+
+    .gateway-card h4 {
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .gateway-card p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .amount-presets {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .preset-btn {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      color: var(--text-light);
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .preset-btn:hover, .preset-btn.active {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .btn-submit {
+      width: 100%;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+      color: white;
+      border: none;
+      padding: 0.9rem;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 4px 14px 0 rgba(234, 88, 12, 0.39);
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px 0 rgba(234, 88, 12, 0.5);
+    }
+
+    pre.code-preview {
+      background: #090d16;
+      border: 1px solid var(--border-color);
+      padding: 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.8rem;
+      color: #38bdf8;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .alert-box {
+      background: rgba(56, 189, 248, 0.1);
+      border-left: 4px solid var(--accent-blue);
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      margin-bottom: 1.25rem;
+    }
+
+    footer {
+      margin-top: 3rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <span class="badge">payment.jivadaya.org Integration Connector</span>
+      <h1>Payment Gateway Checkout Tester</h1>
+      <p class="subtitle">Simulate multi-gateway initiation calls to payment.jivadaya.org or local backend</p>
+    </header>
+
+    <div class="grid">
+      <!-- Checkout Form Card -->
+      <div class="card">
+        <div class="card-title">
+          <span>💳</span> Initiate Donation Payment
+        </div>
+
+        <form id="paymentForm" action="http://localhost:3000/api/payment/initiate" method="POST" target="_blank">
+          
+          <div class="form-group">
+            <label>Target Server Endpoint</label>
+            <select id="endpointSelect" onchange="updateEndpoint()">
+              <option value="http://localhost:3000/api/payment/initiate">Local Server (http://localhost:3000/api/payment/initiate)</option>
+              <option value="https://payment.jivadaya.org/api/payment/initiate">Production Domain (https://payment.jivadaya.org/api/payment/initiate)</option>
+            </select>
+          </div>
+
+          <label>Select Gateway</label>
+          <div class="gateway-selector">
+            <div class="gateway-card active" onclick="selectGateway('ccavenue', this)">
+              <h4>CCAvenue</h4>
+              <p>NetBanking, Cards, UPI</p>
+            </div>
+            <div class="gateway-card" onclick="selectGateway('razorpay', this)">
+              <h4>Razorpay</h4>
+              <p>UPI QR, Cards, Wallets</p>
+            </div>
+          </div>
+          <input type="hidden" name="pg" id="pgInput" value="ccavenue">
+
+          <div class="form-group">
+            <label>Donation Amount (₹)</label>
+            <div class="amount-presets">
+              <button type="button" class="preset-btn" onclick="setAmount(500, this)">₹500</button>
+              <button type="button" class="preset-btn active" onclick="setAmount(1100, this)">₹1,100</button>
+              <button type="button" class="preset-btn" onclick="setAmount(2100, this)">₹2,100</button>
+              <button type="button" class="preset-btn" onclick="setAmount(5000, this)">₹5,000</button>
+            </div>
+            <input type="number" id="amountInput" name="amount" value="1100" min="1" required oninput="updatePreview()">
+          </div>
+
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="nameInput" name="billing_name" value="Sample Donor" required oninput="updatePreview()">
+          </div>
+
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" id="emailInput" name="billing_email" value="donor@jivadaya.org" required oninput="updatePreview()">
+          </div>
+
+          <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" id="telInput" name="billing_tel" value="9876543210" required oninput="updatePreview()">
+          </div>
+
+          <div class="form-group">
+            <label>Internal Order ID (Optional)</label>
+            <input type="text" id="orderInput" name="order_id" value="TEST_ORDER_999" oninput="updatePreview()">
+          </div>
+
+          <input type="hidden" name="campaign_slug" value="default">
+          <input type="hidden" name="skip_db" value="true">
+          <input type="hidden" name="webhook_url" id="webhookInput" value="https://api.your-site.com/payment-update">
+          <input type="hidden" name="callback_url" id="callbackInput" value="https://your-site.com/thank-you">
+
+          <button type="submit" class="btn-submit">Launch Gateway Payment 🚀</button>
+        </form>
+      </div>
+
+      <!-- Live Payload & Code Preview -->
+      <div class="card">
+        <div class="card-title">
+          <span>🔍</span> Live Payload & Request Preview
+        </div>
+
+        <div class="alert-box">
+          💡 <strong>Testing Tip:</strong> To test locally, start the local server with <code>node backend/server.js</code> and select <strong>Local Server</strong> above!
+        </div>
+
+        <div class="form-group">
+          <label>Active Action Target URL</label>
+          <input type="text" id="activeUrlDisplay" readonly value="http://localhost:3000/api/payment/initiate">
+        </div>
+
+        <div class="form-group">
+          <label>Generated POST Payload (JSON format)</label>
+          <pre class="code-preview" id="jsonPreview"></pre>
+        </div>
+
+        <div class="form-group">
+          <label>Generated HTML Form Snippet</label>
+          <pre class="code-preview" id="htmlPreview"></pre>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Jivadaya Technical Cell • payment.jivadaya.org API Suite</p>
+    </footer>
+  </div>
+
+  <script>
+    function updateEndpoint() {
+      const url = document.getElementById('endpointSelect').value;
+      document.getElementById('paymentForm').action = url;
+      document.getElementById('activeUrlDisplay').value = url;
+      updatePreview();
+    }
+
+    function selectGateway(gw, element) {
+      document.querySelectorAll('.gateway-card').forEach(c => c.classList.remove('active'));
+      element.classList.add('active');
+      document.getElementById('pgInput').value = gw;
+      updatePreview();
+    }
+
+    function setAmount(val, element) {
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      element.classList.add('active');
+      document.getElementById('amountInput').value = val;
+      updatePreview();
+    }
+
+    function updatePreview() {
+      const targetUrl = document.getElementById('endpointSelect').value;
+      const payload = {
+        amount: document.getElementById('amountInput').value,
+        billing_name: document.getElementById('nameInput').value,
+        billing_email: document.getElementById('emailInput').value,
+        billing_tel: document.getElementById('telInput').value,
+        pg: document.getElementById('pgInput').value,
+        order_id: document.getElementById('orderInput').value,
+        webhook_url: document.getElementById('webhookInput').value,
+        callback_url: document.getElementById('callbackInput').value
+      };
+
+      document.getElementById('jsonPreview').textContent = JSON.stringify(payload, null, 2);
+
+      const htmlSnippet = `<form action="${targetUrl}" method="POST">
+  <input type="number" name="amount" value="${payload.amount}">
+  <input type="text" name="billing_name" value="${payload.billing_name}">
+  <input type="email" name="billing_email" value="${payload.billing_email}">
+  <input type="hidden" name="pg" value="${payload.pg}">
+  <input type="hidden" name="order_id" value="${payload.order_id}">
+  <button type="submit">Pay Now</button>
+</form>`;
+
+      document.getElementById('htmlPreview').textContent = htmlSnippet;
+    }
+
+    // Initial render
+    updatePreview();
+  </script>
+</body>
+</html>
