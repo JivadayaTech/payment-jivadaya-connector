@@ -51,15 +51,13 @@ function handlePaymentInitiation(req, res) {
   const billing_tel = body.billing_tel || '';
   const pg = (body.pg || 'ccavenue').toLowerCase();
   const payment_option = (body.payment_option || body.sub_pg || body.payment_type || '').toLowerCase();
-  const order_id = body.order_id || `JDSA_${Date.now()}`;
-  const callback_url = body.callback_url || body.redirect_url || body.return_url || `${APP_URL}/thank-you`;
+  const order_id = body.order_id || `Donate_${Date.now()}`;
+  const callback_url = body.callback_url || body.redirect_url || body.return_url || 'https://donate.jivadaya.org/thank-you';
   const webhook_url = body.webhook_url || body.notify_url || '';
 
+  console.log(`[Payment Initiate] Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'all'}`);
 
-
-  console.log(`[Payment Initiate] Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'default'}`);
-
-  if (pg === 'ccavenue' || pg === 'upi') {
+  if (pg === 'ccavenue' || pg === 'razorpay' || pg === 'upi') {
     const merchantId = (process.env.CCAVENUE_MERCHANT_ID || '').trim();
     const accessCode = (process.env.CCAVENUE_ACCESS_CODE || '').trim();
     const workingKey = (process.env.CCAVENUE_WORKING_KEY || '').trim();
@@ -91,16 +89,17 @@ function handlePaymentInitiation(req, res) {
       merchant_param2: webhook_url
     };
 
-    // If client requested UPI explicitly, set direct UPI options
-    if (pg === 'upi' || payment_option === 'upi' || payment_option === 'optupi') {
+    // Only filter payment options if explicitly requested by client (e.g. payment_option="optupi")
+    if (payment_option === 'optupi' || payment_option === 'direct_upi') {
       ccavenueParams.payment_option = 'OPTUPI';
       ccavenueParams.card_type = 'UPI';
       ccavenueParams.card_name = 'UPI';
-    } else if (payment_option === 'netbanking' || payment_option === 'optnbk') {
+    } else if (payment_option === 'optnbk' || payment_option === 'direct_netbanking') {
       ccavenueParams.payment_option = 'OPTNBK';
-    } else if (payment_option === 'card' || payment_option === 'optcrdc') {
+    } else if (payment_option === 'optcrdc' || payment_option === 'direct_card') {
       ccavenueParams.payment_option = 'OPTCRDC';
     }
+
 
     const plainTextQuery = Object.keys(ccavenueParams)
       .map(k => `${k}=${encodeURIComponent(ccavenueParams[k])}`)
