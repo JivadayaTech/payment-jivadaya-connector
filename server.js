@@ -147,7 +147,7 @@ app.post('/api/payment/initiate', handlePaymentInitiation);
 app.post('/payment/initiate', handlePaymentInitiation);
 
 // CCAvenue Redirect Response Handler
-app.post('/api/payment/ccavenue-response', (req, res) => {
+function handleCCAvenueResponse(req, res) {
   const workingKey = (process.env.CCAVENUE_WORKING_KEY || '').trim();
   const encResp = req.body.encResp || '';
 
@@ -163,7 +163,7 @@ app.post('/api/payment/ccavenue-response', (req, res) => {
     const order_status = params.get('order_status') || 'Failed';
     const amount = params.get('amount') || '';
     const tracking_id = params.get('tracking_id') || '';
-    const callback_url = params.get('merchant_param1') || `${APP_URL}/thank-you`;
+    const rawCallbackUrl = params.get('merchant_param1') || `${APP_URL}/thank-you`;
     const webhook_url = params.get('merchant_param2') || '';
 
     console.log(`[CCAvenue Callback] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}`);
@@ -184,24 +184,64 @@ app.post('/api/payment/ccavenue-response', (req, res) => {
       }).catch(err => console.error('[Webhook Post Error]:', err.message));
     }
 
-    // Redirect donor back to client website callback_url
-    const redirectUrl = new URL(callback_url);
-    redirectUrl.searchParams.set('order_id', order_id);
-    redirectUrl.searchParams.set('status', order_status);
-    redirectUrl.searchParams.set('amount', amount);
-    redirectUrl.searchParams.set('txn_id', tracking_id);
+    // Safely construct redirect URL back to client website
+    let redirectTarget = `${APP_URL}/thank-you`;
+    try {
+      const parsedUrl = new URL(rawCallbackUrl);
+      parsedUrl.searchParams.set('order_id', order_id);
+      parsedUrl.searchParams.set('status', order_status);
+      parsedUrl.searchParams.set('amount', amount);
+      parsedUrl.searchParams.set('txn_id', tracking_id);
+      redirectTarget = parsedUrl.toString();
+    } catch (e) {
+      redirectTarget = `${APP_URL}/thank-you?order_id=${encodeURIComponent(order_id)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}`;
+    }
 
-    res.redirect(redirectUrl.toString());
+    res.redirect(redirectTarget);
   } catch (err) {
     console.error('[CCAvenue Response Decryption Error]:', err);
     res.status(500).send('Error processing CCAvenue response.');
   }
+}
+
+app.post('/api/payment/ccavenue-response', handleCCAvenueResponse);
+app.post('/payment/ccavenue-response', handleCCAvenueResponse);
+
+// Thank You Page Handler
+app.get('/thank-you', (req, res) => {
+  const { order_id, status, amount, txn_id } = req.query;
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Donation Completed - Jivadaya</title>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #0f172a; color: white; }
+        .card { background: #1e293b; max-width: 500px; margin: auto; padding: 30px; border-radius: 12px; border: 1px solid #334155; }
+        .badge-success { color: #22c55e; font-size: 1.2rem; font-weight: bold; }
+        .badge-fail { color: #ef4444; font-size: 1.2rem; font-weight: bold; }
+        a.btn { display: inline-block; margin-top: 20px; background: #ea580c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>${status === 'Success' ? '🙏 Thank You for Your Support!' : 'Payment Result'}</h2>
+        <p class="${status === 'Success' ? 'badge-success' : 'badge-fail'}">Status: ${status || 'Completed'}</p>
+        <p>Order Reference: <strong>${order_id || 'N/A'}</strong></p>
+        ${amount ? `<p>Amount: <strong>₹${amount}</strong></p>` : ''}
+        ${txn_id ? `<p>Gateway Txn ID: <strong>${txn_id}</strong></p>` : ''}
+        <a href="/" class="btn">Return to Home</a>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
 // Healthcheck / Status endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'payment.jivadaya.org Central Hub', time: new Date() });
 });
+
 
 app.listen(PORT, () => {
   console.log(`====================================================`);
