@@ -6,7 +6,9 @@
  * 2. Run: node examples/test-ccavenue-credentials.js
  */
 
+import 'dotenv/config';
 import crypto from 'crypto';
+
 
 // -----------------------------------------------------------------------------
 // YOUR CCAVENUE CREDENTIALS FROM DASHBOARD
