@@ -52,8 +52,10 @@ function handlePaymentInitiation(req, res) {
   const pg = (body.pg || 'ccavenue').toLowerCase();
   const payment_option = (body.payment_option || body.sub_pg || body.payment_type || '').toLowerCase();
   const order_id = body.order_id || `JDSA_${Date.now()}`;
-  const callback_url = body.callback_url || `${APP_URL}/thank-you`;
-  const webhook_url = body.webhook_url || '';
+  const callback_url = body.callback_url || body.redirect_url || body.return_url || `${APP_URL}/thank-you`;
+  const webhook_url = body.webhook_url || body.notify_url || '';
+
+
 
   console.log(`[Payment Initiate] Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'default'}`);
 
