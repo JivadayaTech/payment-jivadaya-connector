@@ -181,7 +181,7 @@ function handleCCAvenueResponse(req, res) {
     const tracking_id = params.get('tracking_id') || '';
     
     // Default fallback to central hub thank-you page ONLY if client site passed no callback URL
-    let rawCallbackUrl = params.get('merchant_param1') || `${APP_URL}/thank-you`;
+    let rawCallbackUrl = params.get('merchant_param1') || 'https://pay.jivadaya.org/status';
     const webhook_url = params.get('merchant_param2') || '';
 
     // Safely decode callback URL
@@ -189,18 +189,16 @@ function handleCCAvenueResponse(req, res) {
       rawCallbackUrl = decodeURIComponent(rawCallbackUrl);
     } catch (e) {}
 
-    // Clean and repair malformed URLs (e.g. "https/pay.jivadaya.org/status" -> "https://pay.jivadaya.org/status")
-    rawCallbackUrl = rawCallbackUrl.trim();
-    if (rawCallbackUrl.startsWith('https/') && !rawCallbackUrl.startsWith('https://')) {
-      rawCallbackUrl = rawCallbackUrl.replace(/^https\//, 'https://');
-    } else if (rawCallbackUrl.startsWith('http/') && !rawCallbackUrl.startsWith('http://')) {
-      rawCallbackUrl = rawCallbackUrl.replace(/^http\//, 'http://');
-    } else if (!rawCallbackUrl.startsWith('http://') && !rawCallbackUrl.startsWith('https://')) {
-      rawCallbackUrl = `https://${rawCallbackUrl}`;
+    // Bulletproof URL cleaning: Fix malformed strings like "/https/pay.jivadaya.org/status", "https/pay.jivadaya.org/status", "pay.jivadaya.org/status"
+    let cleanUrl = rawCallbackUrl.trim();
+    cleanUrl = cleanUrl.replace(/^[\/\:\s]+/, ''); // Strip leading slashes/spaces
+    cleanUrl = cleanUrl.replace(/^(https?)\/*/, '$1://'); // Ensure "https://" format
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = 'https://' + cleanUrl.replace(/^:\/*/, '');
     }
 
     console.log(`[CCAvenue Callback Received] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}`);
-    console.log(`[Origin Client Callback URL]: ${rawCallbackUrl}`);
+    console.log(`[Repaired Callback URL]: ${cleanUrl}`);
 
     // If webhook_url was provided by client site, post JSON signal in background to update DB
     if (webhook_url && webhook_url.startsWith('http')) {
@@ -220,10 +218,10 @@ function handleCCAvenueResponse(req, res) {
       }).catch(err => console.error('[Webhook Post Error]:', err.message));
     }
 
-    // Construct clean absolute redirect URL back to client site (e.g. https://pay.jivadaya.org/status)
-    let redirectTarget = `${APP_URL}/thank-you`;
+    // Construct 100% absolute redirect URL back to client site (e.g. https://pay.jivadaya.org/status)
+    let redirectTarget = 'https://pay.jivadaya.org/status';
     try {
-      const parsedUrl = new URL(rawCallbackUrl);
+      const parsedUrl = new URL(cleanUrl);
       parsedUrl.searchParams.set('order_id', order_id);
       parsedUrl.searchParams.set('order_status', order_status);
       parsedUrl.searchParams.set('status', order_status);
@@ -233,13 +231,19 @@ function handleCCAvenueResponse(req, res) {
       parsedUrl.searchParams.set('payment_id', tracking_id);
       redirectTarget = parsedUrl.toString();
     } catch (e) {
-      console.warn('[Callback URL Parse Fallback]:', rawCallbackUrl);
-      const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
-      redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}&tracking_id=${encodeURIComponent(tracking_id)}`;
+      console.warn('[Callback URL Parse Fallback]:', cleanUrl);
+      const joiner = cleanUrl.includes('?') ? '&' : '?';
+      redirectTarget = `${cleanUrl}${joiner}order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}&tracking_id=${encodeURIComponent(tracking_id)}`;
+    }
+
+    // Double-check target is 100% absolute URL (never relative)
+    if (!redirectTarget.startsWith('http://') && !redirectTarget.startsWith('https://')) {
+      redirectTarget = 'https://' + redirectTarget.replace(/^[\/\:\s]+/, '');
     }
 
     console.log(`[Redirecting Donor Back to Origin Site]: ${redirectTarget}`);
     res.redirect(redirectTarget);
+
 
 
 
