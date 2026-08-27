@@ -50,13 +50,14 @@ function handlePaymentInitiation(req, res) {
   const billing_email = body.billing_email || '';
   const billing_tel = body.billing_tel || '';
   const pg = (body.pg || 'ccavenue').toLowerCase();
+  const payment_option = (body.payment_option || body.sub_pg || body.payment_type || '').toLowerCase();
   const order_id = body.order_id || `JDSA_${Date.now()}`;
   const callback_url = body.callback_url || `${APP_URL}/thank-you`;
   const webhook_url = body.webhook_url || '';
 
-  console.log(`[Payment Initiate] Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}`);
+  console.log(`[Payment Initiate] Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'default'}`);
 
-  if (pg === 'ccavenue') {
+  if (pg === 'ccavenue' || pg === 'upi') {
     const merchantId = (process.env.CCAVENUE_MERCHANT_ID || '').trim();
     const accessCode = (process.env.CCAVENUE_ACCESS_CODE || '').trim();
     const workingKey = (process.env.CCAVENUE_WORKING_KEY || '').trim();
@@ -87,6 +88,17 @@ function handlePaymentInitiation(req, res) {
       merchant_param1: callback_url,
       merchant_param2: webhook_url
     };
+
+    // If client requested UPI explicitly, set direct UPI options
+    if (pg === 'upi' || payment_option === 'upi' || payment_option === 'optupi') {
+      ccavenueParams.payment_option = 'OPTUPI';
+      ccavenueParams.card_type = 'UPI';
+      ccavenueParams.card_name = 'UPI';
+    } else if (payment_option === 'netbanking' || payment_option === 'optnbk') {
+      ccavenueParams.payment_option = 'OPTNBK';
+    } else if (payment_option === 'card' || payment_option === 'optcrdc') {
+      ccavenueParams.payment_option = 'OPTCRDC';
+    }
 
     const plainTextQuery = Object.keys(ccavenueParams)
       .map(k => `${k}=${encodeURIComponent(ccavenueParams[k])}`)
@@ -145,28 +157,35 @@ function handlePaymentInitiation(req, res) {
 // Support both /api/payment/initiate and /payment/initiate
 app.post('/api/payment/initiate', handlePaymentInitiation);
 app.post('/payment/initiate', handlePaymentInitiation);
+app.get('/api/payment/initiate', (req, res) => res.redirect('/'));
 
 // CCAvenue Redirect Response Handler
 function handleCCAvenueResponse(req, res) {
   const workingKey = (process.env.CCAVENUE_WORKING_KEY || '').trim();
-  const encResp = req.body.encResp || '';
+  const encResp = req.body?.encResp || req.body?.enc_response || req.query?.encResp || '';
 
   if (!encResp) {
-    return res.status(400).send('Invalid response from CCAvenue.');
+    console.error('[CCAvenue Response Error] Missing encResp in request body or query.');
+    return res.status(400).send('Invalid or missing response payload from CCAvenue.');
   }
 
   try {
-    const decrypted = decryptCCAvenue(encResp, workingKey);
+    const decrypted = decryptCCAvenue(encResp.trim(), workingKey);
     const params = new URLSearchParams(decrypted);
 
     const order_id = params.get('order_id') || '';
     const order_status = params.get('order_status') || 'Failed';
     const amount = params.get('amount') || '';
     const tracking_id = params.get('tracking_id') || '';
-    const rawCallbackUrl = params.get('merchant_param1') || `${APP_URL}/thank-you`;
+    let rawCallbackUrl = params.get('merchant_param1') || `${APP_URL}/thank-you`;
     const webhook_url = params.get('merchant_param2') || '';
 
-    console.log(`[CCAvenue Callback] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}`);
+    // Safely decode callback URL if encoded
+    try {
+      rawCallbackUrl = decodeURIComponent(rawCallbackUrl);
+    } catch (e) {}
+
+    console.log(`[CCAvenue Callback Received] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}, Callback: ${rawCallbackUrl}`);
 
     // If webhook_url was provided, post JSON signal in background
     if (webhook_url && webhook_url.startsWith('http')) {
@@ -184,7 +203,7 @@ function handleCCAvenueResponse(req, res) {
       }).catch(err => console.error('[Webhook Post Error]:', err.message));
     }
 
-    // Safely construct redirect URL back to client website
+    // Safely construct redirect URL back to originating client website (e.g. pay.jivadaya.org)
     let redirectTarget = `${APP_URL}/thank-you`;
     try {
       const parsedUrl = new URL(rawCallbackUrl);
@@ -194,18 +213,27 @@ function handleCCAvenueResponse(req, res) {
       parsedUrl.searchParams.set('txn_id', tracking_id);
       redirectTarget = parsedUrl.toString();
     } catch (e) {
-      redirectTarget = `${APP_URL}/thank-you?order_id=${encodeURIComponent(order_id)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}`;
+      console.warn('[Callback URL Parse Fallback]:', rawCallbackUrl);
+      if (rawCallbackUrl.startsWith('http')) {
+        const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
+        redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}`;
+      } else {
+        redirectTarget = `${APP_URL}/thank-you?order_id=${encodeURIComponent(order_id)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}`;
+      }
     }
 
+    console.log(`[Redirecting User to Origin Site]: ${redirectTarget}`);
     res.redirect(redirectTarget);
   } catch (err) {
-    console.error('[CCAvenue Response Decryption Error]:', err);
-    res.status(500).send('Error processing CCAvenue response.');
+    console.error('[CCAvenue Response Decryption Error]:', err.message);
+    res.status(500).send('Error processing CCAvenue response. Decryption failed.');
   }
 }
 
 app.post('/api/payment/ccavenue-response', handleCCAvenueResponse);
 app.post('/payment/ccavenue-response', handleCCAvenueResponse);
+app.get('/api/payment/ccavenue-response', (req, res) => res.redirect('/'));
+
 
 // Thank You Page Handler
 app.get('/thank-you', (req, res) => {
