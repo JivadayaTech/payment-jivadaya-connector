@@ -22,6 +22,7 @@ This connector enables third-party applications and Jivadaya campaign sites to r
 ```
 payment-jivadaya-connector/
 ├── README.md                           # This Documentation
+├── .env.example                        # Sample Environment Variables File for Credentials
 ├── index.html                          # Interactive Payment Portal & Gateway Tester
 ├── payment-connector.js                # Frontend JS SDK / Helper Module
 └── examples/
@@ -29,6 +30,7 @@ payment-jivadaya-connector/
     ├── sample-php-integration.php        # PHP Server Webhook & Order Handler
     └── curl-test.sh                    # Command-line cURL test scripts
 ```
+
 
 ---
 

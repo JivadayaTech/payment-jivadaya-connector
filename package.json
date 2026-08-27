@@ -1,0 +1,25 @@
+{
+  "name": "payment-jivadaya-connector",
+  "version": "1.0.0",
+  "description": "Central Payment Gateway Integration Connector for payment.jivadaya.org",
+  "main": "payment-connector.js",
+  "type": "module",
+  "scripts": {
+    "start": "node examples/sample-node-integration.js",
+    "test:ccavenue": "node examples/test-ccavenue-credentials.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "keywords": [
+    "jivadaya",
+    "ccavenue",
+    "razorpay",
+    "payment",
+    "gateway"
+  ],
+  "author": "Jivadaya Tech Team",
+  "license": "MIT"
+}

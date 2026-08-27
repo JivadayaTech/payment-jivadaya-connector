@@ -6,11 +6,15 @@
  * 2. Receiving and processing S2S Webhook signals (`webhook_url`).
  */
 
+import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 
 const app = express();
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 
 const PORT = process.env.PORT || 4000;
 const PAYMENTS_INITIATE_URL = 'https://payment.jivadaya.org/api/payment/initiate';
