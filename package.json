@@ -5,7 +5,7 @@
   "main": "payment-connector.js",
   "type": "module",
   "scripts": {
-    "start": "node examples/sample-node-integration.js",
+    "start": "node server.js",
     "test:ccavenue": "node examples/test-ccavenue-credentials.js"
   },
   "dependencies": {
