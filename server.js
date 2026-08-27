@@ -178,19 +178,19 @@ function handleCCAvenueResponse(req, res) {
     const amount = params.get('amount') || '';
     const tracking_id = params.get('tracking_id') || '';
     
-    // Default fallback to https://pay.jivadaya.org/status if merchant_param1 is not returned by CCAvenue
-    let rawCallbackUrl = params.get('merchant_param1') || 'https://pay.jivadaya.org/status';
+    // Default fallback to central hub thank-you page ONLY if client site passed no callback URL
+    let rawCallbackUrl = params.get('merchant_param1') || `${APP_URL}/thank-you`;
     const webhook_url = params.get('merchant_param2') || '';
 
-    // Safely decode callback URL if encoded
+    // Safely decode callback URL
     try {
       rawCallbackUrl = decodeURIComponent(rawCallbackUrl);
     } catch (e) {}
 
-    console.log(`[CCAvenue Callback Received] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}, Target Callback: ${rawCallbackUrl}`);
-    console.log(`[Decrypted CCAvenue Params]:`, Object.fromEntries(params.entries()));
+    console.log(`[CCAvenue Callback Received] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}`);
+    console.log(`[Origin Client Callback URL]: ${rawCallbackUrl}`);
 
-    // If webhook_url was provided, post JSON signal in background
+    // If webhook_url was provided by client site, post JSON signal in background
     if (webhook_url && webhook_url.startsWith('http')) {
       fetch(webhook_url, {
         method: 'POST',
@@ -206,8 +206,8 @@ function handleCCAvenueResponse(req, res) {
       }).catch(err => console.error('[Webhook Post Error]:', err.message));
     }
 
-    // Safely construct redirect URL back to originating client website (e.g. pay.jivadaya.org/status)
-    let redirectTarget = 'https://pay.jivadaya.org/status';
+    // Dynamically construct redirect back to whatever client site initiated payment (pay.jivadaya.org, donate.jivadaya.org, etc.)
+    let redirectTarget = `${APP_URL}/thank-you`;
     try {
       const parsedUrl = new URL(rawCallbackUrl);
       parsedUrl.searchParams.set('order_id', order_id);
@@ -220,12 +220,17 @@ function handleCCAvenueResponse(req, res) {
       redirectTarget = parsedUrl.toString();
     } catch (e) {
       console.warn('[Callback URL Parse Fallback]:', rawCallbackUrl);
-      const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
-      redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}&tracking_id=${encodeURIComponent(tracking_id)}`;
+      if (rawCallbackUrl.startsWith('http')) {
+        const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
+        redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}&tracking_id=${encodeURIComponent(tracking_id)}`;
+      } else {
+        redirectTarget = `${APP_URL}/thank-you?order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}`;
+      }
     }
 
-    console.log(`[Redirecting Donor to Origin Site]: ${redirectTarget}`);
+    console.log(`[Redirecting Donor Back to Origin Site]: ${redirectTarget}`);
     res.redirect(redirectTarget);
+
 
   } catch (err) {
     console.error('[CCAvenue Response Decryption Error]:', err.message);
