@@ -189,18 +189,30 @@ function handleCCAvenueResponse(req, res) {
       rawCallbackUrl = decodeURIComponent(rawCallbackUrl);
     } catch (e) {}
 
+    // Clean and repair malformed URLs (e.g. "https/pay.jivadaya.org/status" -> "https://pay.jivadaya.org/status")
+    rawCallbackUrl = rawCallbackUrl.trim();
+    if (rawCallbackUrl.startsWith('https/') && !rawCallbackUrl.startsWith('https://')) {
+      rawCallbackUrl = rawCallbackUrl.replace(/^https\//, 'https://');
+    } else if (rawCallbackUrl.startsWith('http/') && !rawCallbackUrl.startsWith('http://')) {
+      rawCallbackUrl = rawCallbackUrl.replace(/^http\//, 'http://');
+    } else if (!rawCallbackUrl.startsWith('http://') && !rawCallbackUrl.startsWith('https://')) {
+      rawCallbackUrl = `https://${rawCallbackUrl}`;
+    }
+
     console.log(`[CCAvenue Callback Received] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}`);
     console.log(`[Origin Client Callback URL]: ${rawCallbackUrl}`);
 
-    // If webhook_url was provided by client site, post JSON signal in background
+    // If webhook_url was provided by client site, post JSON signal in background to update DB
     if (webhook_url && webhook_url.startsWith('http')) {
       fetch(webhook_url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: order_status === 'Success' ? 'Success' : 'Failed',
+          status: order_status,
+          order_status: order_status,
           order_id,
           payment_id: tracking_id,
+          tracking_id: tracking_id,
           amount,
           gateway: 'CCAvenue',
           timestamp: new Date().toISOString()
@@ -208,7 +220,7 @@ function handleCCAvenueResponse(req, res) {
       }).catch(err => console.error('[Webhook Post Error]:', err.message));
     }
 
-    // Dynamically construct redirect back to whatever client site initiated payment (pay.jivadaya.org, donate.jivadaya.org, etc.)
+    // Construct clean absolute redirect URL back to client site (e.g. https://pay.jivadaya.org/status)
     let redirectTarget = `${APP_URL}/thank-you`;
     try {
       const parsedUrl = new URL(rawCallbackUrl);
@@ -222,16 +234,13 @@ function handleCCAvenueResponse(req, res) {
       redirectTarget = parsedUrl.toString();
     } catch (e) {
       console.warn('[Callback URL Parse Fallback]:', rawCallbackUrl);
-      if (rawCallbackUrl.startsWith('http')) {
-        const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
-        redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}&tracking_id=${encodeURIComponent(tracking_id)}`;
-      } else {
-        redirectTarget = `${APP_URL}/thank-you?order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}`;
-      }
+      const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
+      redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&order_status=${encodeURIComponent(order_status)}&status=${encodeURIComponent(order_status)}&amount=${encodeURIComponent(amount)}&txn_id=${encodeURIComponent(tracking_id)}&tracking_id=${encodeURIComponent(tracking_id)}`;
     }
 
     console.log(`[Redirecting Donor Back to Origin Site]: ${redirectTarget}`);
     res.redirect(redirectTarget);
+
 
 
   } catch (err) {
