@@ -41,21 +41,48 @@ function decryptCCAvenue(encText, workingKey) {
   return decrypted;
 }
 
+// Helper to dynamically extract originating host from callback_url, referer, or origin header
+function getOriginHost(req, callback_url) {
+  let host = '';
+  if (callback_url && callback_url.startsWith('http')) {
+    try { host = new URL(callback_url).hostname; } catch(e){}
+  }
+  if (!host && req.headers.referer) {
+    try { host = new URL(req.headers.referer).hostname; } catch(e){}
+  }
+  if (!host && req.headers.origin) {
+    try { host = new URL(req.headers.origin).hostname; } catch(e){}
+  }
+  return host || 'donate.jivadaya.org';
+}
+
 // Payment Initiation Handler function
 function handlePaymentInitiation(req, res) {
   const body = req.body || {};
   
+  const rawCallbackUrl = body.callback_url || body.redirect_url || body.return_url || '';
+  const originHost = getOriginHost(req, rawCallbackUrl);
+
+  // 1. Dynamic Order ID Prefix based on originating site (if order_id omitted)
+  let defaultPrefix = 'Donate';
+  if (originHost.includes('pay.jivadaya')) defaultPrefix = 'JDSA';
+  else if (originHost.includes('shastradaan')) defaultPrefix = 'Shastradaan';
+  else if (originHost.includes('donate')) defaultPrefix = 'Donate';
+
+  const order_id = body.order_id || `${defaultPrefix}_${Date.now()}`;
+  
+  // 2. Dynamic Callback URL based on originating site (if callback_url omitted)
+  const callback_url = rawCallbackUrl || `https://${originHost}/thank-you`;
+  const webhook_url = body.webhook_url || body.notify_url || '';
+
   const amount = body.amount || '100.00';
   const billing_name = body.billing_name || 'Donor';
   const billing_email = body.billing_email || '';
   const billing_tel = body.billing_tel || '';
   const pg = (body.pg || 'ccavenue').toLowerCase();
   const payment_option = (body.payment_option || body.sub_pg || body.payment_type || '').toLowerCase();
-  const order_id = body.order_id || `Donate_${Date.now()}`;
-  const callback_url = body.callback_url || body.redirect_url || body.return_url || 'https://donate.jivadaya.org/thank-you';
-  const webhook_url = body.webhook_url || body.notify_url || '';
 
-  console.log(`[Payment Initiate] Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'all'}`);
+  console.log(`[Payment Initiate] Site: ${originHost}, Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'all'}`);
 
   if (pg === 'ccavenue' || pg === 'razorpay' || pg === 'upi') {
     const merchantId = (process.env.CCAVENUE_MERCHANT_ID || '').trim();
@@ -89,16 +116,19 @@ function handlePaymentInitiation(req, res) {
       merchant_param2: webhook_url
     };
 
-    // Only filter payment options if explicitly requested by client (e.g. payment_option="optupi")
-    if (payment_option === 'optupi' || payment_option === 'direct_upi') {
+    // 3. Conditional Payment Option Filtering:
+    // ONLY filter for UPI if client explicitly requested UPI (e.g. payment_option="upi" or pg="upi")
+    const isUpiSpecific = payment_option.includes('upi') || pg === 'upi';
+    if (isUpiSpecific) {
       ccavenueParams.payment_option = 'OPTUPI';
       ccavenueParams.card_type = 'UPI';
       ccavenueParams.card_name = 'UPI';
-    } else if (payment_option === 'optnbk' || payment_option === 'direct_netbanking') {
+    } else if (payment_option.includes('netbank') || payment_option === 'optnbk') {
       ccavenueParams.payment_option = 'OPTNBK';
-    } else if (payment_option === 'optcrdc' || payment_option === 'direct_card') {
+    } else if (payment_option.includes('card') || payment_option === 'optcrdc') {
       ccavenueParams.payment_option = 'OPTCRDC';
     }
+
 
 
     const plainTextQuery = Object.keys(ccavenueParams)
