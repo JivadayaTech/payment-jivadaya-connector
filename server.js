@@ -4,6 +4,8 @@ import cors from 'cors';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fetch from 'node-fetch';
+import { insertInitiatedTransaction, updateTransactionStatus } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,6 +85,21 @@ function handlePaymentInitiation(req, res) {
   const payment_option = (body.payment_option || body.sub_pg || body.payment_type || '').toLowerCase();
 
   console.log(`[Payment Initiate] Site: ${originHost}, Order: ${order_id}, Amount: ₹${amount}, Gateway: ${pg}, Option: ${payment_option || 'all'}`);
+
+  // Persist transaction directly into ph_transactions (No fallback to jd_donations)
+  insertInitiatedTransaction({
+    order_id,
+    amount,
+    currency: 'INR',
+    status: 'initiated',
+    campaign_slug: body.campaign_slug || 'default',
+    billing_name,
+    billing_email,
+    billing_tel,
+    gateway_name: pg,
+    origin_host: originHost,
+    raw_payload: body
+  }).catch(err => console.error('[DB ph_transactions initiate error]:', err.message));
 
   if (pg === 'ccavenue' || pg === 'razorpay' || pg === 'upi') {
     const merchantId = (process.env.CCAVENUE_MERCHANT_ID || '').trim();
@@ -229,6 +246,19 @@ function handleCCAvenueResponse(req, res) {
     console.log(`[CCAvenue Callback Received] Order: ${order_id}, Status: ${order_status}, Txn: ${tracking_id}`);
     console.log(`[Repaired Callback URL]: ${cleanUrl}`);
 
+    const bank_ref_no = params.get('bank_ref_no') || '';
+    const payment_mode = params.get('payment_mode') || '';
+
+    // Directly update ph_transactions (No fallback to jd_donations)
+    updateTransactionStatus({
+      order_id,
+      status: order_status,
+      tracking_id,
+      bank_ref_no,
+      payment_mode,
+      response_payload: Object.fromEntries(params.entries())
+    }).catch(err => console.error('[DB ph_transactions update error]:', err.message));
+
     // If webhook_url was provided by client site, post JSON signal in background to update DB
     if (webhook_url && webhook_url.startsWith('http')) {
       fetch(webhook_url, {
@@ -285,6 +315,45 @@ function handleCCAvenueResponse(req, res) {
 app.post('/api/payment/ccavenue-response', handleCCAvenueResponse);
 app.post('/payment/ccavenue-response', handleCCAvenueResponse);
 app.get('/api/payment/ccavenue-response', (req, res) => res.redirect('/'));
+
+// Razorpay Response / Webhook Handler
+async function handleRazorpayResponse(req, res) {
+  const body = req.body || {};
+  const order_id = body.razorpay_order_id || body.order_id || '';
+  const payment_id = body.razorpay_payment_id || body.payment_id || body.tracking_id || '';
+  const status = (body.status || 'Success');
+
+  console.log(`[Razorpay Callback Received] Order: ${order_id}, Status: ${status}, Txn: ${payment_id}`);
+
+  // Directly update ph_transactions (No fallback to jd_donations)
+  if (order_id) {
+    try {
+      await updateTransactionStatus({
+        order_id,
+        status,
+        tracking_id: payment_id,
+        bank_ref_no: body.bank_ref_no || '',
+        payment_mode: body.method || 'razorpay',
+        response_payload: body
+      });
+    } catch (err) {
+      console.error('[Razorpay DB Update Error]:', err.message);
+    }
+  }
+
+  const rawCallbackUrl = body.callback_url || body.redirect_url || 'https://pay.jivadaya.org/status';
+  const joiner = rawCallbackUrl.includes('?') ? '&' : '?';
+  const redirectTarget = `${rawCallbackUrl}${joiner}order_id=${encodeURIComponent(order_id)}&status=${encodeURIComponent(status)}&payment_id=${encodeURIComponent(payment_id)}`;
+  
+  if (req.headers['content-type']?.includes('application/json')) {
+    return res.json({ success: true, order_id, status });
+  }
+  return res.redirect(redirectTarget);
+}
+
+app.post('/api/payment/razorpay-response', handleRazorpayResponse);
+app.post('/payment/razorpay-response', handleRazorpayResponse);
+app.post('/api/payment/webhook', handleRazorpayResponse);
 
 
 // Thank You Page Handler
