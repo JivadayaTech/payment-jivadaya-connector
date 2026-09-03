@@ -6,18 +6,25 @@ const { Pool } = pg;
 let pool = null;
 
 // Initialize PostgreSQL pool if configuration is provided
-if (process.env.DATABASE_URL || process.env.PGHOST || process.env.DB_HOST) {
-  const connectionConfig = process.env.DATABASE_URL
+const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.DB_URL;
+const dbHost = process.env.PGHOST || process.env.DB_HOST || process.env.POSTGRES_HOST;
+const dbUser = process.env.PGUSER || process.env.DB_USER || process.env.POSTGRES_USER || process.env.DB_USERNAME;
+const dbPass = process.env.PGPASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || process.env.POSTGRES_PASSWORD || process.env.DATABASE_PASSWORD;
+const dbName = process.env.PGDATABASE || process.env.DB_NAME || process.env.POSTGRES_DB || process.env.POSTGRES_DATABASE || 'postgres';
+const dbPort = parseInt(process.env.PGPORT || process.env.DB_PORT || process.env.POSTGRES_PORT || '5432', 10);
+
+if (dbUrl || dbHost) {
+  const connectionConfig = dbUrl
     ? {
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false }
+        connectionString: dbUrl,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : (process.env.DB_SSL === 'false' ? false : undefined)
       }
     : {
-        host: process.env.PGHOST || process.env.DB_HOST || 'localhost',
-        port: parseInt(process.env.PGPORT || process.env.DB_PORT || '5432', 10),
-        user: process.env.PGUSER || process.env.DB_USER || 'postgres',
-        password: process.env.PGPASSWORD || process.env.DB_PASSWORD || '',
-        database: process.env.PGDATABASE || process.env.DB_NAME || 'postgres',
+        host: dbHost || 'localhost',
+        port: dbPort,
+        user: String(dbUser || 'postgres'),
+        password: String(dbPass !== undefined && dbPass !== null ? dbPass : ''),
+        database: String(dbName),
         ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
       };
 
