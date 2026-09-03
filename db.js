@@ -56,8 +56,29 @@ export async function query(text, params = []) {
   }
 }
 
+// Cache of table columns
+let tableColumnsCache = null;
+
+async function getTableColumns(tableName = 'ph_transactions') {
+  if (tableColumnsCache) return tableColumnsCache;
+  try {
+    const res = await query(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = $1;`,
+      [tableName]
+    );
+    if (res && res.rows && res.rows.length > 0) {
+      tableColumnsCache = new Set(res.rows.map(r => r.column_name.toLowerCase()));
+      console.log(`[PostgreSQL] Detected columns for ${tableName}:`, Array.from(tableColumnsCache).join(', '));
+      return tableColumnsCache;
+    }
+  } catch (err) {
+    console.warn('[PostgreSQL] Could not fetch table schema:', err.message);
+  }
+  return null;
+}
+
 /**
- * Insert new transaction into ph_transactions table (No fallback to jd_donations)
+ * Insert new transaction into ph_transactions table dynamically matching existing columns
  */
 export async function insertInitiatedTransaction({
   order_id,
@@ -72,43 +93,73 @@ export async function insertInitiatedTransaction({
   origin_host = '',
   raw_payload = null
 }) {
-  const sql = `
-    INSERT INTO ph_transactions (
-      order_id,
-      amount,
-      currency,
-      status,
-      campaign_slug,
-      billing_name,
-      billing_email,
-      billing_tel,
-      gateway_name,
-      origin_host,
-      raw_payload,
-      created_at,
-      updated_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
-    )
-    ON CONFLICT (order_id) DO UPDATE SET
-      amount = EXCLUDED.amount,
-      status = EXCLUDED.status,
-      updated_at = NOW();
-  `;
+  const cols = await getTableColumns('ph_transactions');
+  
+  const insertMap = {};
 
-  const values = [
-    order_id,
-    parseFloat(amount) || 0,
-    currency,
-    status,
-    campaign_slug,
-    billing_name,
-    billing_email,
-    billing_tel,
-    gateway_name,
-    origin_host,
-    raw_payload ? JSON.stringify(raw_payload) : null
-  ];
+  const setIfExists = (candidates, value) => {
+    if (!cols) {
+      // If schema fetch wasn't possible, use first candidate
+      insertMap[candidates[0]] = value;
+      return;
+    }
+    for (const c of candidates) {
+      if (cols.has(c.toLowerCase())) {
+        insertMap[c] = value;
+        return;
+      }
+    }
+  };
+
+  setIfExists(['order_id'], order_id);
+  setIfExists(['amount'], parseFloat(amount) || 0);
+  if (cols && cols.has('currency')) {
+    setIfExists(['currency'], currency);
+  }
+  setIfExists(['status', 'order_status', 'payment_status'], status);
+  setIfExists(['campaign_slug', 'campaign', 'campaign_id'], campaign_slug);
+  setIfExists(['billing_name', 'donor_name', 'name'], billing_name);
+  setIfExists(['billing_email', 'donor_email', 'email'], billing_email);
+  setIfExists(['billing_tel', 'billing_phone', 'donor_phone', 'phone', 'mobile'], billing_tel);
+  setIfExists(['gateway_name', 'gateway', 'pg'], gateway_name);
+  setIfExists(['origin_host', 'site', 'host'], origin_host);
+  setIfExists(['raw_payload', 'payload', 'raw_data'], raw_payload ? JSON.stringify(raw_payload) : null);
+
+  const columnNames = Object.keys(insertMap);
+  const placeholders = columnNames.map((_, i) => `$${i + 1}`);
+  const values = Object.values(insertMap);
+
+  let onConflictClause = '';
+  if (columnNames.includes('order_id')) {
+    const updateClauses = [];
+    if (columnNames.includes('amount')) updateClauses.push('amount = EXCLUDED.amount');
+    if (columnNames.includes('status')) updateClauses.push('status = EXCLUDED.status');
+    if (cols && cols.has('updated_at')) updateClauses.push('updated_at = NOW()');
+
+    if (updateClauses.length > 0) {
+      onConflictClause = `ON CONFLICT (order_id) DO UPDATE SET ${updateClauses.join(', ')}`;
+    } else {
+      onConflictClause = `ON CONFLICT (order_id) DO NOTHING`;
+    }
+  }
+
+  // Handle created_at & updated_at if they exist in table
+  const finalCols = [...columnNames];
+  const finalPlaceholders = [...placeholders];
+  if (cols && cols.has('created_at')) {
+    finalCols.push('created_at');
+    finalPlaceholders.push('NOW()');
+  }
+  if (cols && cols.has('updated_at')) {
+    finalCols.push('updated_at');
+    finalPlaceholders.push('NOW()');
+  }
+
+  const sql = `
+    INSERT INTO ph_transactions (${finalCols.join(', ')})
+    VALUES (${finalPlaceholders.join(', ')})
+    ${onConflictClause};
+  `;
 
   try {
     return await query(sql, values);
@@ -119,7 +170,7 @@ export async function insertInitiatedTransaction({
 }
 
 /**
- * Update transaction status in ph_transactions (No fallback to jd_donations)
+ * Update transaction status in ph_transactions dynamically matching existing columns
  */
 export async function updateTransactionStatus({
   order_id,
@@ -129,26 +180,54 @@ export async function updateTransactionStatus({
   payment_mode = '',
   response_payload = null
 }) {
+  const cols = await getTableColumns('ph_transactions');
+  const updateFields = [];
+  const values = [];
+
+  const addFieldIfExists = (candidates, value) => {
+    if (!cols) {
+      values.push(value);
+      updateFields.push(`${candidates[0]} = $${values.length}`);
+      return;
+    }
+    for (const c of candidates) {
+      if (cols.has(c.toLowerCase())) {
+        values.push(value);
+        updateFields.push(`${c} = $${values.length}`);
+        return;
+      }
+    }
+  };
+
+  addFieldIfExists(['status', 'order_status', 'payment_status'], status);
+  if (tracking_id) {
+    addFieldIfExists(['tracking_id', 'gateway_txn_id', 'payment_id', 'txn_id', 'gateway_payment_id'], tracking_id);
+  }
+  if (bank_ref_no) {
+    addFieldIfExists(['bank_ref_no', 'bank_reference', 'bank_ref'], bank_ref_no);
+  }
+  if (payment_mode) {
+    addFieldIfExists(['payment_mode', 'payment_option', 'payment_type', 'mode'], payment_mode);
+  }
+  if (response_payload) {
+    addFieldIfExists(['response_payload', 'gateway_response', 'raw_response', 'payload'], JSON.stringify(response_payload));
+  }
+
+  if (cols && cols.has('updated_at')) {
+    updateFields.push('updated_at = NOW()');
+  }
+
+  if (updateFields.length === 0) {
+    console.warn(`[DB Update] No matching columns found to update for order ${order_id}`);
+    return null;
+  }
+
+  values.push(order_id);
   const sql = `
     UPDATE ph_transactions
-    SET
-      status = $1,
-      gateway_txn_id = $2,
-      bank_ref_no = $3,
-      payment_mode = $4,
-      response_payload = $5,
-      updated_at = NOW()
-    WHERE order_id = $6;
+    SET ${updateFields.join(', ')}
+    WHERE order_id = $${values.length};
   `;
-
-  const values = [
-    status,
-    tracking_id,
-    bank_ref_no,
-    payment_mode,
-    response_payload ? JSON.stringify(response_payload) : null,
-    order_id
-  ];
 
   try {
     return await query(sql, values);
