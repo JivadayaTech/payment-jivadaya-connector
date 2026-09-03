@@ -4,8 +4,17 @@ import cors from 'cors';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fetch from 'node-fetch';
 import { insertInitiatedTransaction, updateTransactionStatus } from './db.js';
+
+// Use native fetch (Node 18+) with dynamic fallback
+const fetch = globalThis.fetch || (async (...args) => {
+  try {
+    const nodeFetch = (await import('node-fetch')).default;
+    return nodeFetch(...args);
+  } catch (e) {
+    console.error('[Fetch Error] No fetch implementation found:', e.message);
+  }
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
