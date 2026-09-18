@@ -1,40 +1,85 @@
 <?php
 /**
  * PHP Server Integration & Webhook Handler Example for payment.jivadaya.org
+ *
+ * ⚠️  SECURITY NOTE:
+ *   - The callback_url redirect (browser URL) must NEVER be trusted for order fulfillment.
+ *   - Always verify payments using the signed webhook below.
  */
 
-// Handle Webhook Signal posted by payment.jivadaya.org
+// ── Your per-client webhook secret ────────────────────────────────────────────
+// Set in ph_clients table on payment.jivadaya.org for your domain.
+// Store this in an environment variable — never hardcode in source.
+define('JIVADAYA_WEBHOOK_SECRET', getenv('JIVADAYA_WEBHOOK_SECRET') ?: 'REPLACE_WITH_YOUR_SECRET');
+
+// ── Signature Verification Helper ─────────────────────────────────────────────
+function verifyJivadayaSignature(string $rawBody, string $sigHeader, string $secret): bool {
+    if (empty($sigHeader) || strpos($sigHeader, 'sha256=') !== 0) {
+        return false;
+    }
+    $receivedSig = substr($sigHeader, 7);
+    $expectedSig = hash_hmac('sha256', $rawBody, $secret);
+    // hash_equals() is timing-safe
+    return hash_equals($expectedSig, $receivedSig);
+}
+
+// ── Handle Webhook Signal ──────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && strpos($_SERVER['REQUEST_URI'], 'jivadaya-webhook') !== false) {
     header('Content-Type: application/json');
-    
-    // Read raw JSON input stream
-    $raw_input = file_get_contents('php://input');
-    $data = json_decode($raw_input, true);
-    
-    if (!$data) {
-        http_response_code(400);
-        echo json_encode(["status" => "error", "message" => "Invalid JSON payload"]);
+
+    // Step 1: Read raw body bytes (must be raw for HMAC to match)
+    $rawBody   = file_get_contents('php://input');
+    $sigHeader = $_SERVER['HTTP_X_JIVADAYA_SIGNATURE'] ?? '';
+
+    // Step 2: Verify HMAC signature
+    if (!verifyJivadayaSignature($rawBody, $sigHeader, JIVADAYA_WEBHOOK_SECRET)) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Invalid signature']);
+        error_log('[Jivadaya Webhook] ❌ Signature mismatch — request rejected.');
         exit;
     }
-    
-    $order_id   = $data['order_id'] ?? '';
-    $status     = $data['status'] ?? '';
-    $payment_id = $data['payment_id'] ?? '';
-    $amount     = $data['amount'] ?? '';
-    
-    if ($status === 'Success') {
-        // Execute Database Update Query:
-        // mysqli_query($conn, "UPDATE orders SET status='PAID', payment_id='$payment_id' WHERE order_id='$order_id'");
-        
-        file_put_contents('payment_logs.txt', date('[Y-m-d H:i:s] ') . "SUCCESS: Order $order_id paid ₹$amount (Txn ID: $payment_id)\n", FILE_APPEND);
-        
-        echo json_encode(["status" => "OK", "message" => "Order updated successfully"]);
-    } else {
-        file_put_contents('payment_logs.txt', date('[Y-m-d H:i:s] ') . "FAILED: Order $order_id payment status: $status\n", FILE_APPEND);
-        echo json_encode(["status" => "FAILED", "message" => "Payment failed signal logged"]);
+
+    // Step 3: Parse verified JSON payload
+    $data = json_decode($rawBody, true);
+    if (!$data) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid JSON payload']);
+        exit;
     }
+
+    $order_id   = $data['order_id']   ?? '';
+    $status     = $data['status']     ?? '';
+    $payment_id = $data['payment_id'] ?? '';
+    $amount     = $data['amount']     ?? '';
+    $gateway    = $data['gateway']    ?? '';
+
+    error_log("[Jivadaya Webhook] ✅ Verified | Order: $order_id | Status: $status | ₹$amount via $gateway");
+
+    // Step 4: Act on verified result
+    if ($status === 'Success') {
+        // ✅ Mark order as paid in YOUR database here
+        // mysqli_query($conn, "UPDATE orders SET status='PAID', payment_id='$payment_id' WHERE order_id='$order_id'");
+
+        file_put_contents('payment_logs.txt',
+            date('[Y-m-d H:i:s] ') . "✅ SUCCESS: Order $order_id paid ₹$amount (Txn: $payment_id via $gateway)\n",
+            FILE_APPEND
+        );
+        echo json_encode(['status' => 'OK', 'message' => 'Order updated successfully']);
+
+    } else {
+        file_put_contents('payment_logs.txt',
+            date('[Y-m-d H:i:s] ') . "❌ FAILED: Order $order_id — Status: $status\n",
+            FILE_APPEND
+        );
+        echo json_encode(['status' => 'NOTED', 'message' => "Payment $status logged"]);
+    }
+
+    // Step 5: Always return 200 OK (even for failures — so Jivadaya knows we received it)
+    http_response_code(200);
     exit;
 }
+
+
 
 // Render HTML Donation Form
 ?>

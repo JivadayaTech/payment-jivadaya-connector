@@ -56,6 +56,101 @@ export async function query(text, params = []) {
   }
 }
 
+// ==============================================================================
+// ph_clients table — per-client webhook secret store
+// Schema (auto-created on first use):
+//   id            SERIAL PRIMARY KEY
+//   origin_host   TEXT UNIQUE NOT NULL   -- e.g. "pay.jivadaya.org"
+//   webhook_secret TEXT NOT NULL         -- HMAC signing secret for this client
+//   label         TEXT                   -- friendly name
+//   active        BOOLEAN DEFAULT TRUE
+//   created_at    TIMESTAMPTZ DEFAULT NOW()
+// ==============================================================================
+
+/**
+ * Ensure ph_clients table exists. Called once at server startup.
+ */
+export async function ensureClientsTable() {
+  if (!pool) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ph_clients (
+        id             SERIAL PRIMARY KEY,
+        origin_host    TEXT UNIQUE NOT NULL,
+        webhook_secret TEXT NOT NULL,
+        label          TEXT,
+        active         BOOLEAN DEFAULT TRUE,
+        created_at     TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    console.log('[PostgreSQL] ph_clients table ready.');
+  } catch (err) {
+    console.error('[PostgreSQL] Could not ensure ph_clients table:', err.message);
+  }
+}
+
+// Simple in-process cache: host -> secret (TTL: 5 minutes)
+const secretCache = new Map(); // { host: { secret, expiresAt } }
+const SECRET_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Get per-client webhook secret by origin host.
+ * Falls back to global S2S_WEBHOOK_SECRET env var if no row found.
+ *
+ * @param {string} originHost  e.g. "pay.jivadaya.org"
+ * @returns {Promise<string>}  HMAC secret for this client
+ */
+export async function getClientWebhookSecret(originHost) {
+  const globalFallback = process.env.S2S_WEBHOOK_SECRET || 'change_this_to_a_secure_random_string_123';
+
+  if (!pool || !originHost) return globalFallback;
+
+  // Return cached value if still fresh
+  const cached = secretCache.get(originHost);
+  if (cached && cached.expiresAt > Date.now()) return cached.secret;
+
+  try {
+    const res = await pool.query(
+      `SELECT webhook_secret FROM ph_clients WHERE origin_host = $1 AND active = TRUE LIMIT 1;`,
+      [originHost]
+    );
+    if (res && res.rows && res.rows.length > 0) {
+      const secret = res.rows[0].webhook_secret;
+      secretCache.set(originHost, { secret, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
+      return secret;
+    }
+  } catch (err) {
+    console.error('[DB getClientWebhookSecret Error]:', err.message);
+  }
+
+  // No row found → return global fallback and cache it briefly
+  secretCache.set(originHost, { secret: globalFallback, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
+  return globalFallback;
+}
+
+/**
+ * Look up a transaction's confirmed status directly from DB.
+ * Used by the /status page to avoid trusting URL query params.
+ *
+ * @param {string} order_id
+ * @returns {Promise<{status:string, amount:string, billing_name:string}|null>}
+ */
+export async function getTransactionStatus(order_id) {
+  if (!pool || !order_id) return null;
+  try {
+    const res = await pool.query(
+      `SELECT status, amount, billing_name, billing_email, tracking_id, payment_mode
+       FROM ph_transactions WHERE order_id = $1 LIMIT 1;`,
+      [order_id]
+    );
+    if (res && res.rows && res.rows.length > 0) return res.rows[0];
+  } catch (err) {
+    console.error('[DB getTransactionStatus Error]:', err.message);
+  }
+  return null;
+}
+
+// ==============================================================================
 // Cache of table columns
 let tableColumnsCache = null;
 
@@ -239,6 +334,9 @@ export async function updateTransactionStatus({
 
 export default {
   query,
+  ensureClientsTable,
+  getClientWebhookSecret,
+  getTransactionStatus,
   insertInitiatedTransaction,
   updateTransactionStatus
 };

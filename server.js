@@ -4,7 +4,8 @@ import cors from 'cors';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { insertInitiatedTransaction, updateTransactionStatus } from './db.js';
+import { insertInitiatedTransaction, updateTransactionStatus, ensureClientsTable, getClientWebhookSecret, getTransactionStatus } from './db.js';
+
 
 // Use native fetch (Node 18+) with dynamic fallback
 const fetch = globalThis.fetch || (async (...args) => {
@@ -67,7 +68,27 @@ function getOriginHost(req, callback_url) {
   return host || 'donate.jivadaya.org';
 }
 
-// Payment Initiation Handler function
+// ==============================================================================
+// HMAC-SHA256 Webhook Signature
+// ==============================================================================
+/**
+ * Generate an HMAC-SHA256 signature for a webhook payload.
+ * The resulting header value is:  sha256=<hex>
+ *
+ * @param {string} payloadString  JSON.stringify(body) — exact string that will be sent
+ * @param {string} secret         Per-client webhook secret from ph_clients table
+ * @returns {string}              e.g. "sha256=abc123..."
+ */
+function generateWebhookSignature(payloadString, secret) {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(payloadString, 'utf8');
+  return 'sha256=' + hmac.digest('hex');
+}
+
+// Ensure ph_clients table is present on startup
+ensureClientsTable().catch(err => console.error('[Startup] ensureClientsTable error:', err.message));
+
+
 function handlePaymentInitiation(req, res) {
   const body = req.body || {};
   
@@ -268,12 +289,15 @@ function handleCCAvenueResponse(req, res) {
       response_payload: Object.fromEntries(params.entries())
     }).catch(err => console.error('[DB ph_transactions update error]:', err.message));
 
-    // If webhook_url was provided by client site, post JSON signal in background to update DB
+    // If webhook_url was provided by client site, post HMAC-signed JSON in background
     if (webhook_url && webhook_url.startsWith('http')) {
-      fetch(webhook_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Determine the client's origin host from the callback URL (merchant_param1)
+      let webhookHost = '';
+      try { webhookHost = new URL(webhook_url).hostname; } catch(e){}
+
+      // Retrieve per-client secret (async — fire and forget)
+      getClientWebhookSecret(webhookHost).then(secret => {
+        const webhookPayload = {
           status: order_status,
           order_status: order_status,
           order_id,
@@ -282,9 +306,21 @@ function handleCCAvenueResponse(req, res) {
           amount,
           gateway: 'CCAvenue',
           timestamp: new Date().toISOString()
-        })
-      }).catch(err => console.error('[Webhook Post Error]:', err.message));
+        };
+        const payloadString = JSON.stringify(webhookPayload);
+        const signature = generateWebhookSignature(payloadString, secret);
+
+        return fetch(webhook_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Jivadaya-Signature': signature   // HMAC-SHA256 — verify this on your server
+          },
+          body: payloadString
+        });
+      }).catch(err => console.error('[Signed Webhook Post Error]:', err.message));
     }
+
 
     // Construct 100% absolute redirect URL back to client site (e.g. https://pay.jivadaya.org/status)
     let redirectTarget = 'https://pay.jivadaya.org/status';
@@ -365,9 +401,28 @@ app.post('/payment/razorpay-response', handleRazorpayResponse);
 app.post('/api/payment/webhook', handleRazorpayResponse);
 
 
-// Thank You Page Handler
-app.get('/thank-you', (req, res) => {
-  const { order_id, status, amount, txn_id } = req.query;
+// Thank You Page Handler — DB-verified, never trusts URL params alone
+app.get('/thank-you', async (req, res) => {
+  const { order_id } = req.query;
+
+  // ----------------------------------------------------------------
+  // 1. Always look up the real status from DB (never trust URL params)
+  // ----------------------------------------------------------------
+  let dbRow = null;
+  if (order_id) {
+    dbRow = await getTransactionStatus(order_id).catch(() => null);
+  }
+
+  // 2. Determine what to show
+  const verifiedStatus = dbRow ? (dbRow.status || 'Unknown') : null;
+  const amount         = dbRow ? dbRow.amount         : req.query.amount  || '';
+  const billing_name   = dbRow ? dbRow.billing_name   : '';
+  const txn_id         = dbRow ? dbRow.tracking_id    : req.query.txn_id  || '';
+
+  const isSuccess = verifiedStatus === 'Success';
+  const isFailed  = verifiedStatus === 'Failure' || verifiedStatus === 'Aborted';
+  const isUnknown = !dbRow; // DB not available or order not found yet
+
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -377,23 +432,41 @@ app.get('/thank-you', (req, res) => {
         body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #0f172a; color: white; }
         .card { background: #1e293b; max-width: 500px; margin: auto; padding: 30px; border-radius: 12px; border: 1px solid #334155; }
         .badge-success { color: #22c55e; font-size: 1.2rem; font-weight: bold; }
-        .badge-fail { color: #ef4444; font-size: 1.2rem; font-weight: bold; }
+        .badge-fail    { color: #ef4444; font-size: 1.2rem; font-weight: bold; }
+        .badge-pending { color: #f59e0b; font-size: 1.2rem; font-weight: bold; }
+        .notice { background: #1e3a5f; border: 1px solid #3b82f6; border-radius: 6px; padding: 10px 14px; font-size: 0.82rem; color: #93c5fd; margin-top: 18px; text-align: left; }
         a.btn { display: inline-block; margin-top: 20px; background: #ea580c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; }
       </style>
     </head>
     <body>
       <div class="card">
-        <h2>${status === 'Success' ? '🙏 Thank You for Your Support!' : 'Payment Result'}</h2>
-        <p class="${status === 'Success' ? 'badge-success' : 'badge-fail'}">Status: ${status || 'Completed'}</p>
-        <p>Order Reference: <strong>${order_id || 'N/A'}</strong></p>
-        ${amount ? `<p>Amount: <strong>₹${amount}</strong></p>` : ''}
-        ${txn_id ? `<p>Gateway Txn ID: <strong>${txn_id}</strong></p>` : ''}
+        ${isSuccess ? '<h2>🙏 Thank You for Your Support!</h2>' : ''}
+        ${isFailed  ? '<h2>Payment Not Completed</h2>' : ''}
+        ${isUnknown ? '<h2>Payment Status</h2>' : ''}
+
+        ${isSuccess ? `<p class="badge-success">✅ Payment Confirmed</p>` : ''}
+        ${isFailed  ? `<p class="badge-fail">❌ Status: ${verifiedStatus}</p>` : ''}
+        ${isUnknown ? `<p class="badge-pending">⏳ Status: Pending Verification</p>` : ''}
+
+        ${order_id    ? `<p>Order Reference: <strong>${order_id}</strong></p>` : ''}
+        ${billing_name ? `<p>Name: <strong>${billing_name}</strong></p>` : ''}
+        ${amount      ? `<p>Amount: <strong>₹${amount}</strong></p>` : ''}
+        ${txn_id      ? `<p>Gateway Txn ID: <strong>${txn_id}</strong></p>` : ''}
+
+        ${isUnknown ? `
+          <div class="notice">
+            ℹ️ Your payment is being verified. This page is for display only — your server will
+            receive a signed webhook confirmation once the gateway confirms the transaction.
+          </div>
+        ` : ''}
+
         <a href="/" class="btn">Return to Home</a>
       </div>
     </body>
     </html>
   `);
 });
+
 
 // Healthcheck / Status endpoint
 app.get('/api/health', (req, res) => {
