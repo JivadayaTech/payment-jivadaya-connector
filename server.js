@@ -4,7 +4,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { insertInitiatedTransaction, updateTransactionStatus, ensureClientsTable, getClientWebhookSecret, getTransactionStatus } from './db.js';
+import { query, insertInitiatedTransaction, updateTransactionStatus, ensureClientsTable, getClientWebhookSecret, getTransactionStatus } from './db.js';
 
 
 // Use native fetch (Node 18+) with dynamic fallback
