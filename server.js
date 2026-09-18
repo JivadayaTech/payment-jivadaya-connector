@@ -473,6 +473,149 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'payment.jivadaya.org Central Hub', time: new Date() });
 });
 
+// ==============================================================================
+// ADMIN API — Protected by ADMIN_API_KEY env variable
+// Set ADMIN_API_KEY=your_secret_admin_key in .env
+// ==============================================================================
+
+function requireAdminKey(req, res, next) {
+  const adminKey = process.env.ADMIN_API_KEY || '';
+  const provided  = req.headers['x-admin-key'] || req.query.admin_key || '';
+  if (!adminKey || provided !== adminKey) {
+    return res.status(403).json({ error: 'Forbidden — invalid or missing admin key' });
+  }
+  next();
+}
+
+// ------------------------------------------------------------------------------
+// POST /api/admin/clients/register
+// Register a new client. Auto-generates a strong webhook secret.
+//
+// Request body (JSON):
+//   { "origin_host": "mytemple.org", "label": "My Temple" }
+//
+// Response:
+//   { "origin_host": "mytemple.org", "webhook_secret": "<generated>", "label": "My Temple" }
+//
+// The client puts webhook_secret in their .env as JIVADAYA_WEBHOOK_SECRET
+// ------------------------------------------------------------------------------
+app.post('/api/admin/clients/register', requireAdminKey, async (req, res) => {
+  const { origin_host, label } = req.body || {};
+
+  if (!origin_host) {
+    return res.status(400).json({ error: 'origin_host is required (e.g. "mytemple.org")' });
+  }
+
+  // Auto-generate a cryptographically strong 64-char hex secret
+  const webhook_secret = crypto.randomBytes(32).toString('hex');
+
+  try {
+    await query(
+      `INSERT INTO ph_clients (origin_host, webhook_secret, label)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (origin_host)
+       DO UPDATE SET webhook_secret = EXCLUDED.webhook_secret,
+                     label          = COALESCE(EXCLUDED.label, ph_clients.label),
+                     active         = TRUE;`,
+      [origin_host.trim().toLowerCase(), webhook_secret, label || origin_host]
+    );
+
+    console.log(`[Admin] ✅ Client registered/updated: ${origin_host}`);
+
+    return res.json({
+      success:        true,
+      origin_host:    origin_host.trim().toLowerCase(),
+      label:          label || origin_host,
+      webhook_secret,                          // ← share this with the client
+      note: 'Client must set JIVADAYA_WEBHOOK_SECRET in their .env with this value.'
+    });
+  } catch (err) {
+    console.error('[Admin] Register client error:', err.message);
+    return res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------
+// GET /api/admin/clients
+// List all registered clients (secrets masked for safety)
+// ------------------------------------------------------------------------------
+app.get('/api/admin/clients', requireAdminKey, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, origin_host, label, active, created_at,
+              LEFT(webhook_secret, 8) || '...' AS secret_preview
+       FROM ph_clients ORDER BY created_at DESC;`
+    );
+    return res.json({ clients: result?.rows || [] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------
+// POST /api/admin/webhook-test
+// Fire a real signed test webhook to any URL — use this to verify a client's
+// webhook endpoint is working correctly.
+//
+// Request body (JSON):
+//   { "webhook_url": "https://mytemple.org/webhook", "origin_host": "mytemple.org" }
+// ------------------------------------------------------------------------------
+app.post('/api/admin/webhook-test', requireAdminKey, async (req, res) => {
+  const { webhook_url, origin_host } = req.body || {};
+
+  if (!webhook_url) {
+    return res.status(400).json({ error: 'webhook_url is required' });
+  }
+
+  let host = origin_host || '';
+  if (!host) {
+    try { host = new URL(webhook_url).hostname; } catch(e){}
+  }
+
+  const secret = await getClientWebhookSecret(host);
+
+  const testPayload = {
+    status:       'Success',
+    order_status: 'Success',
+    order_id:     'TEST_' + Date.now(),
+    payment_id:   'TEST_TXN_' + Date.now(),
+    tracking_id:  'TEST_TXN_' + Date.now(),
+    amount:       '1.00',
+    gateway:      'TestGateway',
+    timestamp:    new Date().toISOString(),
+    _test:        true   // flag so client knows this is a test ping
+  };
+
+  const payloadString = JSON.stringify(testPayload);
+  const signature     = generateWebhookSignature(payloadString, secret);
+
+  try {
+    const response = await fetch(webhook_url, {
+      method:  'POST',
+      headers: {
+        'Content-Type':           'application/json',
+        'X-Jivadaya-Signature':   signature,
+        'X-Jivadaya-Test':        'true'
+      },
+      body: payloadString
+    });
+
+    const responseText = await response.text().catch(() => '');
+    console.log(`[Admin] Webhook test → ${webhook_url} | HTTP ${response.status}`);
+
+    return res.json({
+      success:      response.ok,
+      webhook_url,
+      http_status:  response.status,
+      signature,
+      payload_sent: testPayload,
+      client_response: responseText
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Webhook delivery failed: ' + err.message });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`====================================================`);
