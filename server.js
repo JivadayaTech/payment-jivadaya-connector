@@ -99,6 +99,7 @@ function handlePaymentInitiation(req, res) {
   let defaultPrefix = 'Donate';
   if (originHost.includes('pay.jivadaya')) defaultPrefix = 'JDSA';
   else if (originHost.includes('shastradaan')) defaultPrefix = 'Shastradaan';
+  else if (originHost.includes('vec') || originHost.includes('valuesforall')) defaultPrefix = 'VEC';
   else if (originHost.includes('donate')) defaultPrefix = 'Donate';
 
   const order_id = body.order_id || `${defaultPrefix}_${Date.now()}`;
@@ -471,6 +472,35 @@ app.get('/thank-you', async (req, res) => {
 // Healthcheck / Status endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'payment.jivadaya.org Central Hub', time: new Date() });
+});
+
+// Transaction Status check by Order ID
+app.get('/api/payment/status/:order_id', async (req, res) => {
+  const { order_id } = req.params;
+  if (!order_id) {
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  try {
+    const txn = await getTransactionStatus(order_id);
+    if (!txn) {
+      return res.status(404).json({ error: 'Order not found', status: 'NOT_FOUND', order_id });
+    }
+
+    return res.json({
+      order_id,
+      status: txn.status,
+      order_status: txn.status,
+      amount: txn.amount,
+      tracking_id: txn.tracking_id || '',
+      payment_id: txn.tracking_id || '',
+      payment_mode: txn.payment_mode || '',
+      billing_name: txn.billing_name || ''
+    });
+  } catch (err) {
+    console.error('[API Status Check Error]:', err.message);
+    return res.status(500).json({ error: 'Internal server error checking status' });
+  }
 });
 
 // ==============================================================================
