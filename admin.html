@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jivadaya Gateway Admin - Client Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #ea580c;
+      --primary-hover: #c2410c;
+      --bg-dark: #0b1120;
+      --card-bg: #1e293b;
+      --card-inner: #0f172a;
+      --accent-green: #10b981;
+      --accent-blue: #38bdf8;
+      --accent-red: #ef4444;
+      --text-light: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-light);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 960px;
+      width: 100%;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .title-group h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .badge {
+      background: rgba(234, 88, 12, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(234, 88, 12, 0.35);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      transition: all 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-light);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-subtitle {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    @media (max-width: 640px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input, select {
+      width: 100%;
+      background: var(--card-inner);
+      border: 1px solid var(--border-color);
+      color: var(--text-light);
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.2);
+    }
+
+    .btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-light);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-sm {
+      padding: 0.4rem 0.85rem;
+      font-size: 0.8rem;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      background: var(--card-inner);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+
+    .status-dot.active {
+      background: var(--accent-green);
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    }
+
+    .result-box {
+      background: var(--card-inner);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .result-box.show {
+      display: block;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .code-block {
+      background: #050811;
+      border: 1px solid #1e293b;
+      border-radius: 0.5rem;
+      padding: 0.85rem 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #38bdf8;
+      overflow-x: auto;
+      position: relative;
+      margin: 0.5rem 0;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: var(--text-muted);
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.35rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .copy-btn:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .alert-success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--accent-green);
+      color: #6ee7b7;
+    }
+
+    .alert-error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid var(--accent-red);
+      color: #fca5a5;
+    }
+
+    .pill-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .pill-tab {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .pill-tab.active {
+      background: rgba(234, 88, 12, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title-group">
+        <h1><span>⚡</span> Jivadaya Gateway Admin</h1>
+        <span class="badge">S2S Webhook Manager</span>
+      </div>
+      <div class="nav-links">
+        <a href="/">← Gateway Tester</a>
+        <a href="/CONNECT.md" target="_blank">Docs</a>
+      </div>
+    </header>
+
+    <!-- Admin Key Setup Card -->
+    <div class="card">
+      <div class="card-title">🔑 Admin Access Key</div>
+      <div class="card-subtitle">Enter your ADMIN_API_KEY to manage connected websites and trigger test webhooks. It is stored safely in your browser.</div>
+      <div style="display: flex; gap: 0.75rem; max-width: 600px;">
+        <input type="password" id="adminKeyInput" placeholder="Enter ADMIN_API_KEY from .env" autocomplete="off" />
+        <button class="btn" id="saveKeyBtn" onclick="saveAdminKey()">Save Key</button>
+      </div>
+      <div id="keyStatus" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;"></div>
+    </div>
+
+    <!-- Alert Banner -->
+    <div id="alertBanner" class="alert"></div>
+
+    <!-- Navigation Tabs -->
+    <div class="pill-tabs">
+      <button class="pill-tab active" onclick="switchTab('clientsTab', this)">📋 Connected Websites</button>
+      <button class="pill-tab" onclick="switchTab('registerTab', this)">➕ Connect New Website</button>
+      <button class="pill-tab" onclick="switchTab('testTab', this)">🚀 Test Live Webhook</button>
+      <button class="pill-tab" onclick="switchTab('handoverTab', this)">📦 Handover Message Generator</button>
+    </div>
+
+    <!-- TAB 1: Connected Clients Table -->
+    <div id="clientsTab" class="tab-content">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <div class="card-title">Connected Websites in ph_clients</div>
+            <div class="card-subtitle" style="margin-bottom: 0;">Websites authorized to receive HMAC-signed webhook signals.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadClients()">🔄 Refresh List</button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain (origin_host)</th>
+                <th>Label</th>
+                <th>Secret Preview</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="clientsTableBody">
+              <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                  Click "Refresh List" or enter Admin Key to load clients.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Register New Client -->
+    <div id="registerTab" class="tab-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Connect a New Website</div>
+        <div class="card-subtitle">Registers a website domain and auto-generates a 64-character cryptographically secure webhook secret.</div>
+
+        <form onsubmit="registerClient(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Website Domain (origin_host) *</label>
+              <input type="text" id="newOriginHost" placeholder="e.g. vec.jivadaya.org, mytemple.org" required />
+            </div>
+            <div class="form-group">
+              <label>Friendly Name / Label</label>
+              <input type="text" id="newLabel" placeholder="e.g. VEC Contest Platform" />
+            </div>
+          </div>
+          <button type="submit" class="btn">⚡ Generate Secret & Register</button>
+        </form>
+
+        <div id="registerResultBox" class="result-box">
+          <h4 style="color: var(--accent-green); margin-bottom: 0.5rem;">✅ Client Successfully Registered!</h4>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Give this generated secret to the website owner to paste into their <span class="mono">.env</span> file:
+          </p>
+          
+          <div class="code-block">
+            <span id="registeredSecretText"></span>
+            <button class="copy-btn" onclick="copyToClipboard('registeredSecretText')">Copy</button>
+          </div>
+
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0.75rem 0 0.25rem;">
+            What the website owner must put in their server <span class="mono">.env</span>:
+          </p>
+          <div class="code-block">
+            <span id="envSnippetText"></span>
+            <button class="copy-btn" onclick="copyToClipboard('envSnippetText')">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Test Webhook -->
+    <div id="testTab" class="tab-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Test a Live Webhook Endpoint</div>
+        <div class="card-subtitle">Fires a real HMAC-signed POST request with <span class="mono">X-Jivadaya-Signature</span> to confirm the client server verifies it.</div>
+
+        <form onsubmit="sendWebhookTest(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Client Origin Host *</label>
+              <input type="text" id="testOriginHost" placeholder="e.g. vec.jivadaya.org, donate.jivadaya.org" required />
+            </div>
+            <div class="form-group">
+              <label>Target Webhook URL *</label>
+              <input type="url" id="testWebhookUrl" placeholder="https://vec.jivadaya.org/api/v1/students/payment-webhook" required />
+            </div>
+          </div>
+          <button type="submit" class="btn" id="sendTestBtn">🚀 Send Signed Test Ping</button>
+        </form>
+
+        <div id="testResultBox" class="result-box">
+          <h4 id="testResultHeading" style="margin-bottom: 0.5rem;"></h4>
+          <div id="testResultDetails" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;"></div>
+          <div class="code-block">
+            <span id="testResultJson"></span>
+            <button class="copy-btn" onclick="copyToClipboard('testResultJson')">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: Handover Kit Generator -->
+    <div id="handoverTab" class="tab-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">Developer Handover Message Generator</div>
+        <div class="card-subtitle">Generate a complete copy-paste onboarding message to send to any partner or developer via WhatsApp or Email.</div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Partner / Website Name</label>
+            <input type="text" id="handoverName" placeholder="e.g. VEC Platform / My Temple" oninput="generateHandoverText()" />
+          </div>
+          <div class="form-group">
+            <label>Webhook Secret</label>
+            <input type="text" id="handoverSecret" placeholder="Paste generated webhook_secret" oninput="generateHandoverText()" />
+          </div>
+        </div>
+
+        <div class="code-block" style="min-height: 200px; white-space: pre-wrap;" id="handoverMessage"></div>
+        <button class="btn" style="margin-top: 0.75rem;" onclick="copyToClipboard('handoverMessage')">📋 Copy Complete Handover Message</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Load Admin Key from LocalStorage
+    document.addEventListener('DOMContentLoaded', () => {
+      const savedKey = localStorage.getItem('jivadaya_admin_key');
+      if (savedKey) {
+        document.getElementById('adminKeyInput').value = savedKey;
+        document.getElementById('keyStatus').textContent = '✅ Key loaded from browser storage.';
+        loadClients();
+      } else {
+        document.getElementById('keyStatus').textContent = '⚠️ No key saved yet. Enter your ADMIN_API_KEY from .env above.';
+      }
+      generateHandoverText();
+    });
+
+    function saveAdminKey() {
+      const key = document.getElementById('adminKeyInput').value.trim();
+      if (!key) {
+        showAlert('Please enter a valid key', 'error');
+        return;
+      }
+      localStorage.setItem('jivadaya_admin_key', key);
+      document.getElementById('keyStatus').textContent = '✅ Key saved in this browser.';
+      showAlert('Admin key saved successfully!', 'success');
+      loadClients();
+    }
+
+    function getAdminKey() {
+      return (document.getElementById('adminKeyInput').value || localStorage.getItem('jivadaya_admin_key') || '').trim();
+    }
+
+    function showAlert(msg, type) {
+      const banner = document.getElementById('alertBanner');
+      banner.textContent = msg;
+      banner.className = `alert alert-${type}`;
+      banner.style.display = 'block';
+      setTimeout(() => { banner.style.display = 'none'; }, 4000);
+    }
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.pill-tab').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).style.display = 'block';
+      btn.classList.add('active');
+    }
+
+    async function loadClients() {
+      const key = getAdminKey();
+      if (!key) return;
+
+      const tbody = document.getElementById('clientsTableBody');
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">Loading clients from database...</td></tr>';
+
+      try {
+        const res = await fetch('/api/admin/clients', {
+          headers: { 'x-admin-key': key }
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-red); padding: 1.5rem;">Error: ${data.error || 'Authentication failed. Check your ADMIN_API_KEY.'}</td></tr>`;
+          return;
+        }
+
+        const clients = data.clients || [];
+        if (clients.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1.5rem;">No registered clients found in ph_clients yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = clients.map(c => `
+          <tr>
+            <td class="mono font-bold" style="color: var(--accent-blue);">${c.origin_host}</td>
+            <td>${c.label || '-'}</td>
+            <td class="mono text-muted">${c.secret_preview}</td>
+            <td><span class="status-dot ${c.active ? 'active' : ''}"></span>${c.active ? 'Active' : 'Disabled'}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="quickTest('${c.origin_host}')">Test Ping</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-red); padding: 1.5rem;">Connection error: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function registerClient(e) {
+      e.preventDefault();
+      const key = getAdminKey();
+      if (!key) {
+        showAlert('Please enter and save your ADMIN_API_KEY first.', 'error');
+        return;
+      }
+
+      const host = document.getElementById('newOriginHost').value.trim().toLowerCase();
+      const label = document.getElementById('newLabel').value.trim();
+
+      try {
+        const res = await fetch('/api/admin/clients/register', {
+          method: 'POST',
+          headers: {
+            'x-admin-key': key,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ origin_host: host, label: label || host })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showAlert(data.error || 'Registration failed', 'error');
+          return;
+        }
+
+        document.getElementById('registeredSecretText').textContent = data.webhook_secret;
+        document.getElementById('envSnippetText').textContent = `JIVADAYA_WEBHOOK_SECRET=${data.webhook_secret}`;
+        document.getElementById('registerResultBox').classList.add('show');
+
+        // Populate handover tab
+        document.getElementById('handoverName').value = label || host;
+        document.getElementById('handoverSecret').value = data.webhook_secret;
+        generateHandoverText();
+
+        showAlert(`Client ${host} registered successfully!`, 'success');
+        loadClients();
+      } catch (err) {
+        showAlert(err.message, 'error');
+      }
+    }
+
+    async function sendWebhookTest(e) {
+      e.preventDefault();
+      const key = getAdminKey();
+      if (!key) {
+        showAlert('Please enter and save your ADMIN_API_KEY first.', 'error');
+        return;
+      }
+
+      const host = document.getElementById('testOriginHost').value.trim();
+      const url = document.getElementById('testWebhookUrl').value.trim();
+      const btn = document.getElementById('sendTestBtn');
+
+      btn.disabled = true;
+      btn.textContent = 'Sending Signed Ping...';
+
+      try {
+        const res = await fetch('/api/admin/webhook-test', {
+          method: 'POST',
+          headers: {
+            'x-admin-key': key,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ origin_host: host, webhook_url: url })
+        });
+        const data = await res.json();
+
+        const box = document.getElementById('testResultBox');
+        const heading = document.getElementById('testResultHeading');
+        const details = document.getElementById('testResultDetails');
+        const jsonEl = document.getElementById('testResultJson');
+
+        box.classList.add('show');
+        if (data.success) {
+          heading.innerHTML = `✅ Delivery Succeeded (HTTP ${data.http_status})`;
+          heading.style.color = 'var(--accent-green)';
+          details.innerHTML = `Client server successfully verified signature and returned HTTP ${data.http_status}. Response: <span class="mono">${data.client_response || 'OK'}</span>`;
+        } else {
+          heading.innerHTML = `❌ Delivery Failed (HTTP ${data.http_status || 'ERR'})`;
+          heading.style.color = 'var(--accent-red)';
+          details.innerHTML = `Client server rejected or could not be reached. Response: <span class="mono">${data.client_response || data.error || 'Connection refused'}</span>`;
+        }
+
+        jsonEl.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        showAlert(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 Send Signed Test Ping';
+      }
+    }
+
+    function quickTest(host) {
+      document.getElementById('testOriginHost').value = host;
+      document.getElementById('testWebhookUrl').value = `https://${host}/api/webhook/payment`;
+      switchTab('testTab', document.querySelectorAll('.pill-tab')[2]);
+    }
+
+    function generateHandoverText() {
+      const name = document.getElementById('handoverName')?.value.trim() || 'Partner Website';
+      const secret = document.getElementById('handoverSecret')?.value.trim() || 'YOUR_GENERATED_SECRET';
+
+      const msg = `Hi team ${name},
+
+Here are your official connection details to integrate with the Jivadaya Central Payment Gateway:
+
+1. PAYMENT INITIATE ENDPOINT:
+POST https://payment.jivadaya.org/api/payment/initiate
+
+2. REQUIRED FORM FIELDS:
+- amount: Donation / Fee in INR (e.g. 200)
+- billing_name: Full Name
+- billing_tel: Mobile Number
+- callback_url: Where user lands after payment (e.g. https://your-site.com/status)
+- webhook_url: Your server endpoint to receive payment confirmation (e.g. https://your-site.com/api/webhook)
+
+3. YOUR SIGNED WEBHOOK SECRET:
+In your backend .env file, add:
+JIVADAYA_WEBHOOK_SECRET=${secret}
+
+Every completed transaction posts an HMAC-SHA256 signature in the 'X-Jivadaya-Signature' header. Verify this signature with your secret before marking orders paid in your database.
+
+Complete Integration Guide & Working Code:
+https://payment.jivadaya.org/CONNECT.md`;
+
+      const box = document.getElementById('handoverMessage');
+      if (box) box.textContent = msg;
+    }
+
+    function copyToClipboard(elementId) {
+      const text = document.getElementById(elementId).innerText || document.getElementById(elementId).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        showAlert('Copied to clipboard!', 'success');
+      });
+    }
+  </script>
+</body>
+</html>
