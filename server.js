@@ -508,11 +508,27 @@ app.get('/api/payment/status/:order_id', async (req, res) => {
 // Set ADMIN_API_KEY=your_secret_admin_key in .env
 // ==============================================================================
 
+function cleanKey(k) {
+  if (!k) return '';
+  return String(k).trim().replace(/^["']|["']$/g, '').trim();
+}
+
 function requireAdminKey(req, res, next) {
-  const adminKey = process.env.ADMIN_API_KEY || '';
-  const provided  = req.headers['x-admin-key'] || req.query.admin_key || '';
-  if (!adminKey || provided !== adminKey) {
-    return res.status(403).json({ error: 'Forbidden — invalid or missing admin key' });
+  const adminKey = cleanKey(process.env.ADMIN_API_KEY);
+  const rawProvided = req.headers['x-admin-key'] || req.query.admin_key || '';
+  const provided = cleanKey(rawProvided);
+
+  if (!adminKey) {
+    console.error('[Admin Auth] ⚠️ ADMIN_API_KEY is not set in .env on the server!');
+    return res.status(503).json({
+      error: 'ADMIN_API_KEY is not configured in the server .env file. Please add ADMIN_API_KEY to your .env on payment.jivadaya.org and restart the server.'
+    });
+  }
+
+  if (!provided || provided !== adminKey) {
+    return res.status(403).json({
+      error: 'Forbidden — invalid admin key. The key entered in your browser does not match ADMIN_API_KEY in the server .env file.'
+    });
   }
   next();
 }
