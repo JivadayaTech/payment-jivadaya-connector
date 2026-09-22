@@ -506,6 +506,40 @@
     </div>
   </div>
 
+  <!-- Edit Client Modal -->
+  <div id="editClientModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 1rem;">
+    <div class="card" style="max-width: 500px; width: 100%; margin-bottom: 0; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+      <div class="card-title">✏️ Edit Connected Website</div>
+      <div class="card-subtitle">Update domain hostname, friendly label, or active status in <span class="mono">ph_clients</span>.</div>
+
+      <form onsubmit="saveClientEdit(event)">
+        <input type="hidden" id="editClientId" />
+        <div class="form-group">
+          <label>Domain (origin_host) *</label>
+          <input type="text" id="editOriginHost" placeholder="e.g. shastradaan.com" required />
+          <div style="font-size: 0.75rem; color: var(--accent-blue); margin-top: 0.35rem;">
+            💡 Note: Never include "https://" or slashes. E.g. "shastradaan.com".
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Friendly Name / Label</label>
+          <input type="text" id="editLabel" placeholder="e.g. Shastradaan Portal" />
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="editActive">
+            <option value="true">Active (Accepts Signed Webhooks)</option>
+            <option value="false">Disabled</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+          <button type="submit" class="btn">💾 Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     function cleanKey(k) {
       if (!k) return '';
@@ -597,6 +631,112 @@
       btn.classList.add('active');
     }
 
+    function cleanDomain(d) {
+      if (!d) return '';
+      let s = String(d).trim().toLowerCase();
+      s = s.replace(/^https?:\/\//, '');
+      s = s.split('/')[0];
+      s = s.split(':')[0];
+      return s.trim();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeAttr(str) {
+      if (!str) return '';
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    function openEditModal(id, host, label, active) {
+      document.getElementById('editClientId').value = id;
+      document.getElementById('editOriginHost').value = cleanDomain(host);
+      document.getElementById('editLabel').value = label || '';
+      document.getElementById('editActive').value = active ? 'true' : 'false';
+      const modal = document.getElementById('editClientModal');
+      modal.style.display = 'flex';
+    }
+
+    function closeEditModal() {
+      document.getElementById('editClientModal').style.display = 'none';
+    }
+
+    async function saveClientEdit(e) {
+      e.preventDefault();
+      const key = getAdminKey();
+      if (!key) {
+        showAlert('Please enter and save your ADMIN_API_KEY first.', 'error');
+        return;
+      }
+      const id = document.getElementById('editClientId').value;
+      const host = cleanDomain(document.getElementById('editOriginHost').value);
+      const label = document.getElementById('editLabel').value.trim();
+      const active = document.getElementById('editActive').value === 'true';
+
+      if (!host) {
+        showAlert('Please enter a valid domain name.', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/admin/clients/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: {
+            'x-admin-key': key,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ origin_host: host, label, active })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(data.error || 'Failed to update client', 'error');
+          return;
+        }
+
+        closeEditModal();
+        showAlert(`Successfully updated client: ${host}`, 'success');
+        loadClients();
+      } catch (err) {
+        showAlert(err.message, 'error');
+      }
+    }
+
+    async function deleteClient(id, host) {
+      if (!confirm(`Are you sure you want to delete "${host}" from ph_clients? Webhooks will no longer use custom secrets for this host.`)) {
+        return;
+      }
+      const key = getAdminKey();
+      if (!key) {
+        showAlert('Please enter and save your ADMIN_API_KEY first.', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/admin/clients/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: {
+            'x-admin-key': key
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(data.error || 'Failed to delete client', 'error');
+          return;
+        }
+        showAlert(`Client ${host} deleted successfully`, 'success');
+        loadClients();
+      } catch (err) {
+        showAlert(err.message, 'error');
+      }
+    }
+
     async function loadClients() {
       const key = getAdminKey();
       if (!key) return;
@@ -623,12 +763,16 @@
 
         tbody.innerHTML = clients.map(c => `
           <tr>
-            <td class="mono font-bold" style="color: var(--accent-blue);">${c.origin_host}</td>
-            <td>${c.label || '-'}</td>
-            <td class="mono text-muted">${c.secret_preview}</td>
+            <td class="mono font-bold" style="color: var(--accent-blue);">${escapeHtml(c.origin_host)}</td>
+            <td>${escapeHtml(c.label || '-')}</td>
+            <td class="mono text-muted">${escapeHtml(c.secret_preview)}</td>
             <td><span class="status-dot ${c.active ? 'active' : ''}"></span>${c.active ? 'Active' : 'Disabled'}</td>
             <td>
-              <button class="btn btn-secondary btn-sm" onclick="quickTest('${c.origin_host}')">Test Ping</button>
+              <div style="display: flex; gap: 0.35rem; align-items: center;">
+                <button class="btn btn-secondary btn-sm" onclick="openEditModal('${c.id}', '${escapeAttr(c.origin_host)}', '${escapeAttr(c.label || '')}', ${Boolean(c.active)})">✏️ Edit</button>
+                <button class="btn btn-secondary btn-sm" onclick="quickTest('${escapeAttr(c.origin_host)}')">Ping</button>
+                <button class="btn btn-secondary btn-sm" style="color: var(--accent-red); border-color: rgba(239,68,68,0.3);" onclick="deleteClient('${c.id}', '${escapeAttr(c.origin_host)}')">🗑️</button>
+              </div>
             </td>
           </tr>
         `).join('');
@@ -645,8 +789,14 @@
         return;
       }
 
-      const host = document.getElementById('newOriginHost').value.trim().toLowerCase();
+      const rawHost = document.getElementById('newOriginHost').value.trim();
+      const host = cleanDomain(rawHost);
       const label = document.getElementById('newLabel').value.trim();
+
+      if (!host) {
+        showAlert('Please enter a valid domain (e.g. shastradaan.com)', 'error');
+        return;
+      }
 
       try {
         const res = await fetch('/api/admin/clients/register', {

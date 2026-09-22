@@ -547,23 +547,25 @@ function requireAdminKey(req, res, next) {
   next();
 }
 
+function cleanDomain(d) {
+  if (!d) return '';
+  let s = String(d).trim().toLowerCase();
+  s = s.replace(/^https?:\/\//, ''); // strip https:// or http://
+  s = s.split('/')[0];              // strip any trailing path /
+  s = s.split(':')[0];              // strip any port
+  return s.trim();
+}
+
 // ------------------------------------------------------------------------------
 // POST /api/admin/clients/register
 // Register a new client. Auto-generates a strong webhook secret.
-//
-// Request body (JSON):
-//   { "origin_host": "mytemple.org", "label": "My Temple" }
-//
-// Response:
-//   { "origin_host": "mytemple.org", "webhook_secret": "<generated>", "label": "My Temple" }
-//
-// The client puts webhook_secret in their .env as JIVADAYA_WEBHOOK_SECRET
 // ------------------------------------------------------------------------------
 app.post('/api/admin/clients/register', requireAdminKey, async (req, res) => {
   const { origin_host, label } = req.body || {};
 
-  if (!origin_host) {
-    return res.status(400).json({ error: 'origin_host is required (e.g. "mytemple.org")' });
+  const cleanedHost = cleanDomain(origin_host);
+  if (!cleanedHost) {
+    return res.status(400).json({ error: 'Valid domain/origin_host is required (e.g. "shastradaan.com")' });
   }
 
   // Auto-generate a cryptographically strong 64-char hex secret
@@ -577,16 +579,16 @@ app.post('/api/admin/clients/register', requireAdminKey, async (req, res) => {
        DO UPDATE SET webhook_secret = EXCLUDED.webhook_secret,
                      label          = COALESCE(EXCLUDED.label, ph_clients.label),
                      active         = TRUE;`,
-      [origin_host.trim().toLowerCase(), webhook_secret, label || origin_host]
+      [cleanedHost, webhook_secret, label || cleanedHost]
     );
 
-    console.log(`[Admin] ✅ Client registered/updated: ${origin_host}`);
+    console.log(`[Admin] ✅ Client registered/updated: ${cleanedHost}`);
 
     return res.json({
       success:        true,
-      origin_host:    origin_host.trim().toLowerCase(),
-      label:          label || origin_host,
-      webhook_secret,                          // ← share this with the client
+      origin_host:    cleanedHost,
+      label:          label || cleanedHost,
+      webhook_secret,
       note: 'Client must set JIVADAYA_WEBHOOK_SECRET in their .env with this value.'
     });
   } catch (err) {
@@ -607,6 +609,72 @@ app.get('/api/admin/clients', requireAdminKey, async (req, res) => {
        FROM ph_clients ORDER BY created_at DESC;`
     );
     return res.json({ clients: result?.rows || [] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------
+// PUT /api/admin/clients/:id
+// Edit an existing client (update domain, label, active status, or secret)
+// ------------------------------------------------------------------------------
+app.put('/api/admin/clients/:id', requireAdminKey, async (req, res) => {
+  const { id } = req.params;
+  const { origin_host, label, active, webhook_secret } = req.body || {};
+
+  if (!id) return res.status(400).json({ error: 'Client ID is required' });
+
+  const cleanedHost = cleanDomain(origin_host);
+  if (!cleanedHost) return res.status(400).json({ error: 'Valid domain is required' });
+
+  try {
+    const updateFields = [];
+    const values = [];
+    let idx = 1;
+
+    updateFields.push(`origin_host = $${idx++}`);
+    values.push(cleanedHost);
+
+    if (label !== undefined) {
+      updateFields.push(`label = $${idx++}`);
+      values.push(label.trim());
+    }
+
+    if (active !== undefined) {
+      updateFields.push(`active = $${idx++}`);
+      values.push(Boolean(active));
+    }
+
+    if (webhook_secret && webhook_secret.trim()) {
+      updateFields.push(`webhook_secret = $${idx++}`);
+      values.push(webhook_secret.trim());
+    }
+
+    values.push(id);
+    const sql = `UPDATE ph_clients SET ${updateFields.join(', ')} WHERE id = $${idx} RETURNING id, origin_host, label, active;`;
+    const result = await query(sql, values);
+
+    if (!result || result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    return res.json({ success: true, client: result.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ error: 'Database error: ' + err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------
+// DELETE /api/admin/clients/:id
+// Remove a client from ph_clients
+// ------------------------------------------------------------------------------
+app.delete('/api/admin/clients/:id', requireAdminKey, async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: 'Client ID is required' });
+
+  try {
+    await query('DELETE FROM ph_clients WHERE id = $1;', [id]);
+    return res.json({ success: true, message: 'Client deleted successfully' });
   } catch (err) {
     return res.status(500).json({ error: 'Database error: ' + err.message });
   }
