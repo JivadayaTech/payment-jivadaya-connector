@@ -318,7 +318,9 @@ function handleCCAvenueResponse(req, res) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-Jivadaya-Signature': signature   // HMAC-SHA256 — verify this on your server
+            'X-Jivadaya-Signature': signature,   // HMAC-SHA256 — verify this on your server
+            'User-Agent': 'JivadayaGateway/2.0',
+            'ngrok-skip-browser-warning': 'true'
           },
           body: payloadString
         }).then(async (response) => {
@@ -651,11 +653,14 @@ app.post('/api/admin/webhook-test', requireAdminKey, async (req, res) => {
     const response = await fetch(webhook_url, {
       method:  'POST',
       headers: {
-        'Content-Type':           'application/json',
-        'X-Jivadaya-Signature':   signature,
-        'X-Jivadaya-Test':        'true'
+        'Content-Type':               'application/json',
+        'X-Jivadaya-Signature':       signature,
+        'X-Jivadaya-Test':            'true',
+        'User-Agent':                 'JivadayaGateway/2.0',
+        'ngrok-skip-browser-warning': 'true'
       },
-      body: payloadString
+      body: payloadString,
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined
     });
 
     const responseText = await response.text().catch(() => '');
