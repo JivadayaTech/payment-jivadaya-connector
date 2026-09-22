@@ -95,28 +95,40 @@ const SECRET_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Get per-client webhook secret by origin host.
+ * Checks primaryHost (e.g. from webhook_url) and secondaryHost (e.g. from callback_url).
  * Falls back to global S2S_WEBHOOK_SECRET env var if no row found.
  *
- * @param {string} originHost  e.g. "pay.jivadaya.org"
- * @returns {Promise<string>}  HMAC secret for this client
+ * @param {string} primaryHost   e.g. "api.valuesforall.org" or "vec.jivadaya.org"
+ * @param {string} secondaryHost e.g. "vec.jivadaya.org"
+ * @returns {Promise<string>}   HMAC secret for this client
  */
-export async function getClientWebhookSecret(originHost) {
+export async function getClientWebhookSecret(primaryHost, secondaryHost) {
   const globalFallback = process.env.S2S_WEBHOOK_SECRET || 'change_this_to_a_secure_random_string_123';
 
-  if (!pool || !originHost) return globalFallback;
+  if (!pool) return globalFallback;
 
-  // Return cached value if still fresh
-  const cached = secretCache.get(originHost);
-  if (cached && cached.expiresAt > Date.now()) return cached.secret;
+  const h1 = String(primaryHost || '').trim().toLowerCase().replace(/:[0-9]+$/, '');
+  const h2 = String(secondaryHost || '').trim().toLowerCase().replace(/:[0-9]+$/, '');
+
+  for (const host of [h1, h2]) {
+    if (!host) continue;
+    const cached = secretCache.get(host);
+    if (cached && cached.expiresAt > Date.now()) return cached.secret;
+  }
 
   try {
     const res = await pool.query(
-      `SELECT webhook_secret FROM ph_clients WHERE origin_host = $1 AND active = TRUE LIMIT 1;`,
-      [originHost]
+      `SELECT origin_host, webhook_secret FROM ph_clients 
+       WHERE (LOWER(origin_host) = $1 OR LOWER(origin_host) = $2) AND active = TRUE 
+       ORDER BY (LOWER(origin_host) = $1) DESC LIMIT 1;`,
+      [h1 || '', h2 || '']
     );
     if (res && res.rows && res.rows.length > 0) {
       const secret = res.rows[0].webhook_secret;
-      secretCache.set(originHost, { secret, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
+      const matchedHost = res.rows[0].origin_host.toLowerCase();
+      secretCache.set(matchedHost, { secret, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
+      if (h1) secretCache.set(h1, { secret, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
+      if (h2) secretCache.set(h2, { secret, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
       return secret;
     }
   } catch (err) {
@@ -124,7 +136,7 @@ export async function getClientWebhookSecret(originHost) {
   }
 
   // No row found → return global fallback and cache it briefly
-  secretCache.set(originHost, { secret: globalFallback, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
+  if (h1) secretCache.set(h1, { secret: globalFallback, expiresAt: Date.now() + SECRET_CACHE_TTL_MS });
   return globalFallback;
 }
 

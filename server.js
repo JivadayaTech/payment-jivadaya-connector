@@ -292,12 +292,13 @@ function handleCCAvenueResponse(req, res) {
 
     // If webhook_url was provided by client site, post HMAC-signed JSON in background
     if (webhook_url && webhook_url.startsWith('http')) {
-      // Determine the client's origin host from the callback URL (merchant_param1)
       let webhookHost = '';
       try { webhookHost = new URL(webhook_url).hostname; } catch(e){}
+      let callbackHost = '';
+      try { callbackHost = new URL(cleanUrl).hostname; } catch(e){}
 
-      // Retrieve per-client secret (async — fire and forget)
-      getClientWebhookSecret(webhookHost).then(secret => {
+      // Retrieve per-client secret (checks both webhookHost and callbackHost)
+      getClientWebhookSecret(webhookHost, callbackHost).then(secret => {
         const webhookPayload = {
           status: order_status,
           order_status: order_status,
@@ -311,6 +312,8 @@ function handleCCAvenueResponse(req, res) {
         const payloadString = JSON.stringify(webhookPayload);
         const signature = generateWebhookSignature(payloadString, secret);
 
+        console.log(`[Signed Webhook Firing] URL: ${webhook_url} | Order: ${order_id} | Host: ${webhookHost || callbackHost}`);
+
         return fetch(webhook_url, {
           method: 'POST',
           headers: {
@@ -318,8 +321,17 @@ function handleCCAvenueResponse(req, res) {
             'X-Jivadaya-Signature': signature   // HMAC-SHA256 — verify this on your server
           },
           body: payloadString
+        }).then(async (response) => {
+          const resText = await response.text().catch(() => '');
+          if (response.ok) {
+            console.log(`[Signed Webhook Delivered] Order: ${order_id} -> ${webhook_url} returned HTTP ${response.status}`);
+          } else {
+            console.error(`[Signed Webhook Rejected] Order: ${order_id} -> ${webhook_url} returned HTTP ${response.status}: ${resText.substring(0, 250)}`);
+          }
         });
       }).catch(err => console.error('[Signed Webhook Post Error]:', err.message));
+    } else {
+      console.warn(`[Webhook Skipped] No webhook_url provided for Order ${order_id}. merchant_param2 was: "${webhook_url}"`);
     }
 
 
