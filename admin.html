@@ -748,6 +748,12 @@
         const res = await fetch('/api/admin/clients', {
           headers: { 'x-admin-key': key }
         });
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await res.text();
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-red); padding: 1.5rem;">API Error (HTTP ${res.status}): Server returned non-JSON response. Ensure you are accessing admin.html through the Payment Gateway backend server (https://payment.jivadaya.org/admin.html).</td></tr>`;
+          return;
+        }
         const data = await res.json();
 
         if (!res.ok) {
@@ -854,7 +860,20 @@
           },
           body: JSON.stringify({ origin_host: host, webhook_url: url })
         });
-        const data = await res.json();
+        
+        let data;
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const rawText = await res.text();
+          data = {
+            success: false,
+            http_status: res.status,
+            error: `Server returned non-JSON response (HTTP ${res.status})`,
+            client_response: rawText.substring(0, 500)
+          };
+        }
 
         const box = document.getElementById('testResultBox');
         const heading = document.getElementById('testResultHeading');
