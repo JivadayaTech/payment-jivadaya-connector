@@ -97,7 +97,7 @@ function handlePaymentInitiation(req, res) {
 
   // 1. Dynamic Order ID Prefix based on originating site (if order_id omitted)
   let defaultPrefix = 'Donate';
-  if (originHost.includes('pay.jivadaya')) defaultPrefix = 'JDSA';
+  if (originHost.includes('pay.jivadaya') || originHost.includes('pay.jeevadaya')) defaultPrefix = 'JDSA';
   else if (originHost.includes('shastradaan')) defaultPrefix = 'Shastradaan';
   else if (originHost.includes('vec') || originHost.includes('valuesforall')) defaultPrefix = 'VEC';
   else if (originHost.includes('donate')) defaultPrefix = 'Donate';
