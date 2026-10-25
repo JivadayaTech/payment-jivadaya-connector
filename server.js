@@ -89,6 +89,9 @@ function generateWebhookSignature(payloadString, secret) {
 ensureClientsTable().catch(err => console.error('[Startup] ensureClientsTable error:', err.message));
 
 
+// In-memory cache of order_id -> workingKey for dynamic multi-temple decryption
+const dynamicWorkingKeys = new Map();
+
 function handlePaymentInitiation(req, res) {
   const body = req.body || {};
   
@@ -133,10 +136,18 @@ function handlePaymentInitiation(req, res) {
   }).catch(err => console.error('[DB ph_transactions initiate error]:', err.message));
 
   if (pg === 'ccavenue' || pg === 'razorpay' || pg === 'upi') {
-    const merchantId = (process.env.CCAVENUE_MERCHANT_ID || '').trim();
-    const accessCode = (process.env.CCAVENUE_ACCESS_CODE || '').trim();
-    const workingKey = (process.env.CCAVENUE_WORKING_KEY || '').trim();
+    const merchantId = (body.merchant_id || process.env.CCAVENUE_MERCHANT_ID || '').trim();
+    const accessCode = (body.access_code || process.env.CCAVENUE_ACCESS_CODE || '').trim();
+    const workingKey = (body.working_key || process.env.CCAVENUE_WORKING_KEY || '').trim();
     const isLive = process.env.CCAVENUE_ENV === 'live';
+
+    if (order_id && workingKey) {
+      dynamicWorkingKeys.set(order_id, workingKey);
+      if (dynamicWorkingKeys.size > 2000) {
+        const oldestKey = dynamicWorkingKeys.keys().next().value;
+        dynamicWorkingKeys.delete(oldestKey);
+      }
+    }
 
     const gatewayUrl = isLive
       ? 'https://secure.ccavenue.com/transaction/transaction.do?command=initiateTransaction'
@@ -154,8 +165,8 @@ function handlePaymentInitiation(req, res) {
       order_id: order_id,
       currency: 'INR',
       amount: parseFloat(amount).toFixed(2),
-      redirect_url: `${APP_URL}/api/payment/ccavenue-response`,
-      cancel_url: `${APP_URL}/api/payment/ccavenue-response`,
+      redirect_url: `${APP_URL}/api/payment/ccavenue-response?order_id=${encodeURIComponent(order_id)}`,
+      cancel_url: `${APP_URL}/api/payment/ccavenue-response?order_id=${encodeURIComponent(order_id)}`,
       language: 'EN',
       billing_name: billing_name,
       billing_email: billing_email,
@@ -240,7 +251,6 @@ app.get('/api/payment/initiate', (req, res) => res.redirect('/'));
 
 // CCAvenue Redirect Response Handler
 function handleCCAvenueResponse(req, res) {
-  const workingKey = (process.env.CCAVENUE_WORKING_KEY || '').trim();
   const encResp = req.body?.encResp || req.body?.enc_response || req.query?.encResp || '';
 
   if (!encResp) {
@@ -248,8 +258,29 @@ function handleCCAvenueResponse(req, res) {
     return res.status(400).send('Invalid or missing response payload from CCAvenue.');
   }
 
+  // Resolve dynamic working key by order_id passed in redirect_url query
+  const orderIdFromQuery = req.query?.order_id || req.body?.order_id || '';
+  let workingKey = (orderIdFromQuery && dynamicWorkingKeys.get(orderIdFromQuery)) || (process.env.CCAVENUE_WORKING_KEY || '').trim();
+
+  let decrypted = '';
   try {
-    const decrypted = decryptCCAvenue(encResp.trim(), workingKey);
+    decrypted = decryptCCAvenue(encResp.trim(), workingKey);
+  } catch (err) {
+    // If decryption fails and default env key differs, attempt with default env key as fallback
+    if (process.env.CCAVENUE_WORKING_KEY && process.env.CCAVENUE_WORKING_KEY.trim() !== workingKey) {
+      try {
+        decrypted = decryptCCAvenue(encResp.trim(), process.env.CCAVENUE_WORKING_KEY.trim());
+      } catch (fallbackErr) {
+        console.error('[CCAvenue Decryption Error]:', err.message);
+        return res.status(400).send('Failed to decrypt gateway response.');
+      }
+    } else {
+      console.error('[CCAvenue Decryption Error]:', err.message);
+      return res.status(400).send('Failed to decrypt gateway response.');
+    }
+  }
+
+  try {
     const params = new URLSearchParams(decrypted);
 
     const order_id = params.get('order_id') || '';
